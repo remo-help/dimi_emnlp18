@@ -32,7 +32,7 @@ def main(argv):
     config = configparser.ConfigParser()
     input_seqs_file = None
 
-    time.sleep(random() * 10)
+    #time.sleep(random() * 10)
     if os.path.isdir(path):
         ## Resume mode
         config.read(path + "/config.ini")
