@@ -14,7 +14,7 @@ from random import randint, random
 import time
 import multiprocessing
 
-def main(argv):
+def main(argv, name="example"):
     if len(argv) < 1:
         sys.stderr.write("One required argument: <Config file|Resume directory>\n")
         sys.exit(-1)
@@ -51,7 +51,7 @@ def main(argv):
         config['params']['k'] = K
         if init_alpha:
             config['params']['init_alpha'] = init_alpha
-        out_dir += '_D'+D+'K'+K+'A'+init_alpha
+        out_dir += name
 
         counter = itertools.count()
         for i in counter:
