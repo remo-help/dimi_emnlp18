@@ -54,18 +54,11 @@ def main(argv, name="example"):
         out_dir += name
 
         counter = itertools.count()
-        for i in counter:
-            new_out_dir = out_dir + '_{}'.format(i)
-            if not os.path.exists(new_out_dir):
-                os.makedirs(new_out_dir)
-                out_dir = new_out_dir
-                config['io']['output_dir'] = out_dir
-                sys.stderr.write("The output directory for this run is {}.\n".format(out_dir))
-                break
+
         resume = False
 
 
-        with open(out_dir + "/config.ini", 'w') as configfile:
+        with open(out_dir + "/config.ini", 'w+') as configfile:
             config.write(configfile)
 
     ## Write git hash of current branch to out directory
