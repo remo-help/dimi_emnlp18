@@ -19,12 +19,9 @@ def main(argv):
         sys.stderr.write("One required argument: <Config file|Resume directory>\n")
         sys.exit(-1)
 
-    path = argv[0]
+    path = argv
     D, K, init_alpha = 0, 0, 0
-    if len(argv) == 3:
-        D, K = argv[1], argv[2]
-    elif len(argv) == 4:
-        D, K, init_alpha = argv[1], argv[2], argv[3]
+
     if not os.path.exists(path):
         sys.stderr.write("Input file/dir does not exist!\n")
         sys.exit(-1)
@@ -33,13 +30,13 @@ def main(argv):
     input_seqs_file = None
 
     #time.sleep(random() * 10)
-    if os.path.isdir(path):
+    if os.path.isdir(path + "config.ini"):
         ## Resume mode
         config.read(path)
         out_dir = config.get('io', 'output_dir')
         resume = True
     else:
-        config.read(argv[0])
+        config.read(path)
         input_seqs_file = config.get('io', 'init_seqs', fallback=None)
         if not input_seqs_file is None:
             del config['io']['init_seqs']
@@ -114,11 +111,3 @@ def read_params(config):
 
     return params
 
-
-if __name__ == "__main__":
-    try:
-        multiprocessing.set_start_method("fork")
-    except:
-        ctx = multiprocessing.get_start_method()
-        print(ctx)
-    main(sys.argv[1:])
