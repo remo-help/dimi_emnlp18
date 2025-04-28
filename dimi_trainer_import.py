@@ -35,7 +35,7 @@ def main(argv):
     #time.sleep(random() * 10)
     if os.path.isdir(path):
         ## Resume mode
-        config.read(path + "/config.ini")
+        config.read(path)
         out_dir = config.get('io', 'output_dir')
         resume = True
     else:
