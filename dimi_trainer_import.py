@@ -36,6 +36,7 @@ def main(argv):
     if os.path.isdir(path):
         ## Resume mode
         config.read(path)
+        print(config.read())
         out_dir = config.get('io', 'output_dir')
         resume = True
     else:
