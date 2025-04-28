@@ -53,9 +53,8 @@ def main(argv, name="example"):
             config['params']['init_alpha'] = init_alpha
         out_dir += name
 
-        counter = itertools.count()
-
-        resume = False
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
 
 
         with open(out_dir + "/config.ini", 'w+') as configfile:
