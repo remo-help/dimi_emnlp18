@@ -138,7 +138,8 @@ def _calc_gamma(deltas, sampled_pcfg, d):
 def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_pcfg_seqs=None,
                        strategy=None, ints_seqs=None, gold_pos_dict = None,
                        ac_coeff = 1.0, sample_alpha_flag=False, resume = False,
-                       dnn=None, random_trees=False, productions=None):
+                       dnn=None, random_trees=False, productions=None,
+                       best_logprob=0, best_model=False):
     # import pdb; pdb.set_trace()
     D = bounded_model.D
     d = D + 1  # calculate d+1 depth models for all pseudo count models, but not using them in
@@ -181,7 +182,8 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
     logging.info('PCFG model sampling.')
     sampled_pcfg, p0 = pcfg_model.sample(pcfg_counts, p0_counts, annealing_coeff=ac_coeff,
                                          sample_alpha_flag=sample_alpha_flag,
-                                         resume=resume, dnn=dnn)
+                                         resume=resume, dnn=dnn,
+                                         best_logprob=best_logprob, best_model=best_model)
     # At this point, we have successfully sampled an unbounded grammar model
 
     if d > 0:

@@ -91,7 +91,7 @@ class PCFG_model:
         self.init_counts()
 
     def sample(self, pcfg_counts=None, p0_counts=None, annealing_coeff=1.0,
-               sample_alpha_flag=False, resume=False, dnn=None):  # used as
+               sample_alpha_flag=False, resume=False, dnn=None, best_logprob=0, best_model=False):  # used as
         #  the normal sampling procedure
         # import pdb; pdb.set_trace()
         if not resume:
@@ -101,7 +101,8 @@ class PCFG_model:
         else:
             self.log_probs = 0
             self.iter += 1
-        sampled_pcfg = self._sample_model(annealing_coeff, resume=resume, dnn=dnn)
+        sampled_pcfg = self._sample_model(annealing_coeff, resume=resume, dnn=dnn, best_logprob=best_logprob,
+                                          best_model=best_model)
         # self._calc_autocorr()
         sampled_pcfg = self._translate_model_to_pcfg(sampled_pcfg)
         # self.nonterm_log.flush()
@@ -146,9 +147,9 @@ class PCFG_model:
                 if index < self.K2:
                     self.nonterm_non_total_counts[lhs] += pcfg_counts[parent][children]
 
-    def _sample_model(self, annealing_coeff=1.0, resume=False, dnn=None):
+    def _sample_model(self, annealing_coeff=1.0, resume=False, dnn=None, best_logprob=0, best_model=False):
         if not resume:
-            self.save(dnn)
+            self.save(dnn, best_logprob=best_logprob, best_model=best_model)
             logging.info("resample the pcfg model with nonterm alpha {}, term alpha {} and annealing "
                      "coeff {}.".format(self.nonterm_alpha, self.term_alpha, annealing_coeff))
         if self.log_probs != 0: # If we have not just initialized...
@@ -191,7 +192,7 @@ class PCFG_model:
         pcfg = self._translate_model_to_pcfg(self.unannealed_dists)
         return pcfg, self.p0
 
-    def save(self, dnn):
+    def save(self, dnn, best_logprob=0, best_model=False):
         t0 = time.time()
         log_dir = self.log_dir
         save_model_fn = 'pcfg_model_' + str(self.iter) + '.pkl'
@@ -200,6 +201,11 @@ class PCFG_model:
             os.remove(past_three)
         this_f = os.path.join(log_dir, save_model_fn)
         torch.save((self,dnn), open(this_f, 'wb'))
+        if best_model:
+            best_f = os.path.join(log_dir, 'pcfg_model_' + 'best' + '.pkl')
+            os.remove(best_f)
+            torch.save((self, dnn), open(best_f, 'wb'))
+            logging.info(f'New best model found with logprob: {best_logprob}')
         t1 = time.time()
         logging.info('Dumping out the pcfg model takes {:.3f} secs.'.format(t1 - t0))
 

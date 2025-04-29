@@ -31,7 +31,7 @@ def wrapped_sample_beam(*args, **kwargs):
         sample_beam(*args, **kwargs)
     except Exception as e:
         # print(e)
-        logging.info('Sampling beam function has errored out!')
+        logging.warning('Sampling beam function has errored out!')
         raise e
         exit(0)
 
@@ -213,6 +213,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     best_anneal_likelihood = -np.inf
     prev_anneal_coeff = -np.inf
     total_logprob = 0
+    best_log_prob = -np.inf
+    best_iter = 0
     warming_period = False
     ### Start doing actual sampling:
     while cur_iter < iters:
@@ -285,10 +287,18 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         p.daemon = True
         p.start()
 
-
+        if np.isinf(best_log_prob):
+            best_log_prob = total_logprobs
+            best_model = True
+        elif best_log_prob>total_logprobs:
+            best_log_prob = total_logprobs
+            best_model = True
+            best_iter = cur_iter
+        else:
+            best_model = False
         logging.info("The log prob for this iter is {}".format(total_logprobs))
         pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
-                           productions=(productions, p0_counter))
+                           productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
 
 
         ## Update sentence indices for next batch:
@@ -322,6 +332,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         inf_procs[cur_proc] = None
 
     logging.info("Sampling complete.")
+    logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
     # return samples
 
 
