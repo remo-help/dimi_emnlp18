@@ -203,7 +203,8 @@ class PCFG_model:
         torch.save((self,dnn), open(this_f, 'wb'))
         if best_model:
             best_f = os.path.join(log_dir, 'pcfg_model_' + 'best' + '.pkl')
-            os.remove(best_f)
+            if os.path.exists(best_f):
+                os.remove(best_f)
             torch.save((self, dnn), open(best_f, 'wb'))
             logging.info(f'New best model found with logprob: {best_logprob}')
         t1 = time.time()
