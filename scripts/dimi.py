@@ -290,7 +290,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         if np.isinf(best_log_prob):
             best_log_prob = total_logprobs
             best_model = True
-        elif best_log_prob>total_logprobs:
+        elif best_log_prob<total_logprobs:
             best_log_prob = total_logprobs
             best_model = True
             best_iter = cur_iter
