@@ -299,7 +299,7 @@ class WorkDistributerServer():
         self.sink.setProcessing(True)
 
         ## Wait a bit for sink to process signal and set processing to true for the first time
-        time.sleep(3)
+        #time.sleep(3)
 
         self.startProcessing(model_sig)
         while self.sink.getProcessing():
