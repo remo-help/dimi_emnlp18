@@ -270,22 +270,23 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         pcfg_model.right_branching_tendency = r_branches / (l_branches + r_branches)
         logging.info("iter {} has a right branching tendency score of {:.2f}".format(cur_iter,
                                                                                  pcfg_model.right_branching_tendency))
-        linetrees_fn = 'iter_' + str(cur_iter) + '.linetrees'
-        full_fn = os.path.join(working_dir, linetrees_fn)
-        if print_out_first_n_sents != -1:
-            trees = hid_seqs[: print_out_first_n_sents]
-        else:
-            trees = hid_seqs
-        hid_seqs = [None] * len(ev_seqs)
-        if cur_iter % 100 == 0 and cur_iter != 0:
-            pprint_bool = True
-        else:
-            pprint_bool = False
-        p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
+        if params.get("print_trees", False):
+            linetrees_fn = 'iter_' + str(cur_iter) + '.linetrees'
+            full_fn = os.path.join(working_dir, linetrees_fn)
+            if print_out_first_n_sents != -1:
+                trees = hid_seqs[: print_out_first_n_sents]
+            else:
+                trees = hid_seqs
+            hid_seqs = [None] * len(ev_seqs)
+            if cur_iter % 100 == 0 and cur_iter != 0:
+                pprint_bool = True
+            else:
+                pprint_bool = False
+            p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
                                                                        pcfg_model.word_dict,
                                                                        full_fn, pprint_bool))
-        p.daemon = True
-        p.start()
+            p.daemon = True
+            p.start()
 
         if np.isinf(best_log_prob):
             best_log_prob = total_logprobs
@@ -317,7 +318,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         #         pickle.dump(dnn_obs_model, rfn)
         #
         cur_iter += 1
-        p.join()
+        if params.get("print_trees", False):
+            p.join()
 
     logging.debug("Ending sampling")
     workDistributer.stop()
