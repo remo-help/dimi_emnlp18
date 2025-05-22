@@ -217,7 +217,7 @@ class ModelDistributer(Thread):
         
         ## Wait until we're actually given a model to start sending them out...
         while self.model_sig is None:
-            time.sleep(1)
+            time.sleep(0.5)
 
         while True:
             ## TODO -- put a timeout in this recv() of a second so that it checks the
@@ -299,7 +299,7 @@ class WorkDistributerServer():
         self.sink.setProcessing(True)
 
         ## Wait a bit for sink to process signal and set processing to true for the first time
-        #time.sleep(3)
+        time.sleep(0.01)
 
         self.startProcessing(model_sig)
         while self.sink.getProcessing():
