@@ -146,7 +146,7 @@ class PyzmqWorker:
                     sent = sentence_job.ev_seq
                     sent_batch.append(sent)
                     # print(sent_index, sent)
-                logging.info(f"sentbatch = {sent_batch[0:10]}")
+                #logging.info(f"sentbatch = {sent_batch[0:10]}")
 
             elif job.type == PyzmqJob.QUIT:
                 logging.debug('Worker %d received signal from job server to check for new model' %
