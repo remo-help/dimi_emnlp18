@@ -388,9 +388,10 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             eval_inf_procs[cur_proc] = None
 
     logging.info("Sampling complete.")
-    logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
     if eval_sequences:
         logging.info(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
+    else:
+        logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
     # return samples
 
 
