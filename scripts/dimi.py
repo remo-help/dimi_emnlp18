@@ -238,6 +238,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     best_log_prob = -np.inf
     best_eval_prob = -np.inf
     best_iter = 0
+    best_eval_iter = 0
     warming_period = False
     ### Start doing actual sampling:
     while cur_iter < iters:
@@ -322,7 +323,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             elif best_eval_prob < eval_logprob:
                 best_eval_prob = eval_logprob
                 best_model = True
-                best_iter = cur_iter
+                best_eval_iter = cur_iter
             else:
                 best_model = False
 
@@ -383,6 +384,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
 
     logging.info("Sampling complete.")
     logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
+    if eval_sequences:
+        logging.info(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
     # return samples
 
 
