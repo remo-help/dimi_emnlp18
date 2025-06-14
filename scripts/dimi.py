@@ -136,7 +136,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
         logging.info(f"eval: {eval_sequences[0:2]}")
         logging.info(f"train: {ev_seqs[0:2]}")
-        if str2bool(params.get('early_stopping', fallback=True)):
+        if str2bool(params.get('early_stopping', True)):
             early_stopper = EarlyStopper()
         else:
             early_stopper = False
