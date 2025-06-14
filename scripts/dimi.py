@@ -420,7 +420,6 @@ def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind):
             eval_logprob += parse.log_prob
             eval_log_e += parse.log_prob / np.log10(np.e)
     logging.info(f"total eval logprob = {eval_logprob}")
-    logging.info(f"total eval logprob = {eval_logprob / np.log10(np.e)}")
     logging.info(f"total eval logprob = {eval_log_e}")
     return eval_logprob
 
@@ -432,13 +431,14 @@ class EarlyStopper:
      and a tolerance for the overall best result (have the logodds surpassed the best result)
     '''
 
-    def __init__(self, tolerance=3, best_tolerance=10):
+    def __init__(self, tolerance=3, best_tolerance=10, delta=0.5):
         self.best_probs = -np.inf
         self.tolerance = tolerance
         self.counter = 0
         self.best_counter = 0
         self.last_probs = -np.inf
         self.best_tolerance = best_tolerance
+        self.delta = delta
 
     def update(self, logodds):
         if logodds > self.last_probs:
@@ -447,11 +447,15 @@ class EarlyStopper:
             if logodds > self.best_probs:
                 self.best_probs = logodds
                 return True
+            elif logodds > (self.best_probs - self.delta):
+                return True
             else:
                 self.best_counter += 1
                 if self.best_counter > self.best_tolerance:
                     logging.warning(f"Stopping training last best loggods were {self.best_tolerance} evals ago")
                     return False
+        elif logodds > (self.last_probs - self.delta):
+            return True
         else:
             self.counter += 1
             if self.counter > self.tolerance:
