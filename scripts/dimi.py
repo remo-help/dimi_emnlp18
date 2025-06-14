@@ -236,6 +236,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     prev_anneal_coeff = -np.inf
     total_logprob = 0
     best_log_prob = -np.inf
+    best_eval_prob = -np.inf
     best_iter = 0
     warming_period = False
     ### Start doing actual sampling:
@@ -310,21 +311,38 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             p.daemon = True
             p.start()
 
-        if np.isinf(best_log_prob):
-            best_log_prob = total_logprobs
-            best_model = True
-        elif best_log_prob<total_logprobs:
-            best_log_prob = total_logprobs
-            best_model = True
-            best_iter = cur_iter
+        if eval_sequences:
+            eval_logprob = -np.inf
+            if cur_iter % eval_interval == 0 and cur_iter !=0:
+                eval_logprob = eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
+
+            if np.isinf(best_log_prob):
+                best_log_prob = total_logprobs
+                best_model = True
+            elif best_eval_prob < eval_logprob:
+                best_eval_prob = eval_logprob
+                best_model = True
+                best_iter = cur_iter
+            else:
+                best_model = False
+
         else:
-            best_model = False
+            if np.isinf(best_log_prob):
+                best_log_prob = total_logprobs
+                best_model = True
+            elif best_log_prob < total_logprobs:
+                best_log_prob = total_logprobs
+                best_model = True
+                best_iter = cur_iter
+            else:
+                best_model = False
+
         logging.info("The log prob for this iter is {}".format(total_logprobs))
         pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
                            productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
-        if eval_sequences:
-            if cur_iter % eval_interval == 0 and cur_iter !=0:
-                eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
+        #if eval_sequences:
+        #    if cur_iter % eval_interval == 0 and cur_iter !=0:
+        #        eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
 
 
         ## Update sentence indices for next batch:
@@ -394,3 +412,4 @@ def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
     logging.info(f"total eval logprob = {eval_logprob}")
     logging.info(f"total eval logprob = {eval_logprob / np.log10(np.e)}")
     logging.info(f"total eval logprob = {eval_log_e}")
+    return eval_logprob
