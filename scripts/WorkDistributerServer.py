@@ -279,11 +279,10 @@ class WorkDistributerServer():
         self.models = None
         self.model_server.start()
 
-    def submitSentenceJobs(self, start=-1, end=-1, sent_index_list=None, eval_run= False):
+    def submitSentenceJobs(self, start=-1, end=-1, sent_index_list=None):
         ind = 0
         num_done = 0
-        if not eval_run:
-            self.model_server.reset_models()
+        self.model_server.reset_models()
         model_sig = self.model_server.model_sig
         # print(start, end, 'submit')
         if sent_index_list is not None:
