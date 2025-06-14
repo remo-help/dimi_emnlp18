@@ -384,10 +384,13 @@ def handle_sigint(signum, frame, workers, work_server):
 def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
     logging.info("initiating eval parse")
     eval_logprob = 0
+    eval_log_e = 0
     evalDistributer.submitSentenceJobs(start_ind, end_ind)
     parses = evalDistributer.get_parses()
     for parse in parses:
         if parse.success:
             eval_logprob += parse.log_prob
+            eval_log_e += parse.log_prob / np.log10(np.e)
     logging.info(f"total eval logprob = {eval_logprob}")
     logging.info(f"total eval logprob = {eval_logprob / np.log10(np.e)}")
+    logging.info(f"total eval logprob = {eval_log_e}")
