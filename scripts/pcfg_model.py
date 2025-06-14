@@ -198,7 +198,8 @@ class PCFG_model:
         log_dir = self.log_dir
         if last_model:
             save_model_fn = 'pcfg_model_' + 'last' + '.pkl'
-        save_model_fn = 'pcfg_model_' + str(self.iter) + '.pkl'
+        else:
+            save_model_fn = 'pcfg_model_' + str(self.iter) + '.pkl'
         past_three = os.path.join(log_dir, 'pcfg_model_' + str(self.iter - 3) + '.pkl')
         if os.path.exists(past_three) and (self.iter - 3) % 100:
             os.remove(past_three)
