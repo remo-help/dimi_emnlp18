@@ -132,6 +132,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         eval_end_ind = min(len(eval_sequences), batch_per_update)
         eval_interval = int(params.get('eval_interval', 5))
         evalDistributer = WorkDistributerServer(eval_sequences, working_dir)
+        logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
     else:
         eval_start_ind = None
         eval_end_ind = None
