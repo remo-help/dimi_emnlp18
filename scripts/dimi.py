@@ -244,7 +244,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     best_iter = 0
     best_eval_iter = 0
     warming_period = False
-    continue_bool = False
+    continue_bool = True
     ### Start doing actual sampling:
     while cur_iter < iters and continue_bool:
         sent_list = []
