@@ -161,7 +161,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
                              'extraction.')
                 _, pcfg_counts, p0_counts = extract_counts_from_trees(hid_seqs, K)
             else:
-                logging.info(f'Productions already calculated.{productions}')
+                logging.info(f'Productions already calculated.')
                 pcfg_counts, p0_counts = productions
                 total_count = 0
                 for parent in pcfg_counts:
