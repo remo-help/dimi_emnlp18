@@ -68,9 +68,15 @@ def main(argv, name="example"):
     input_file = config.get('io', 'input_file')
     working_dir = config.get('io', 'working_dir', fallback=out_dir)
     dict_file = config.get('io', 'dict_file')
+    eval_file = config.get('io', 'eval_file', fallback=None)
 
     ## Read in input file to get sequence for X
     (pos_seq, word_seq) = io.read_input_file(input_file)
+    if eval_file:
+        eval_seqs = io.read_input_file(eval_file)
+    else:
+        eval_seqs = None
+
 
     params = read_params(config)
     params['output_dir'] = out_dir
@@ -93,7 +99,7 @@ def main(argv, name="example"):
         word_vecs = io.read_word_vector_file(params.get('word_vecs_file'), io.read_dict_file(dict_file))
     dimi.wrapped_sample_beam(word_seq, params, working_dir, gold_seqs=gold_seq,
                              word_vecs=word_vecs,
-                             word_dict_file = dict_file, resume=resume)
+                             word_dict_file = dict_file, resume=resume, eval_sequences=eval_seqs)
 
 
 def read_params(config):

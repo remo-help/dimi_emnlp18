@@ -25,6 +25,8 @@ class Sample:
         self.models = None
         self.log_prob = 0
 
+def str2bool(v):
+    return v.lower() in ("yes", "true", "t", "1")
 
 def wrapped_sample_beam(*args, **kwargs):
     try:
@@ -40,7 +42,7 @@ def wrapped_sample_beam(*args, **kwargs):
 # the EVidence SEQuenceS seen by the user (e.g., words in a sentence
 # mapped to ints).
 def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
-                word_dict_file=None, word_vecs=None, resume=False):
+                word_dict_file=None, word_vecs=None, resume=False, eval_sequences=None):
     global K
     K = int(params.get('k'))
     sent_lens = list(map(len, ev_seqs))
@@ -125,7 +127,16 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     samples = []
     start_ind = 0
     end_ind = min(num_sents, batch_per_update)
-
+    if eval_sequences:
+        eval_start_ind = 0
+        eval_end_ind = min(len(eval_sequences), batch_per_update)
+        eval_interval = int(params.get('eval_interval', 5))
+        evalDistributer = WorkDistributerServer(eval_sequences, working_dir)
+    else:
+        eval_start_ind = None
+        eval_end_ind = None
+        eval_interval = None
+        evalDistributer = None
     logging.info("Initializing state: K is {}; D is {}; MaxLen is {}".format(K, D, max_len))
 
     rnn_model_file = os.path.join(working_dir, 'rnn_model.pkl')
@@ -300,6 +311,9 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         logging.info("The log prob for this iter is {}".format(total_logprobs))
         pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
                            productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
+        if eval_sequences:
+            if cur_iter % eval_interval:
+                eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
 
 
         ## Update sentence indices for next batch:
@@ -349,3 +363,14 @@ def handle_sigint(signum, frame, workers, work_server):
     work_server.stop()
     logging.info("Master existing now.")
     raise SystemExit
+
+
+def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
+    logging.info("initiating eval parse")
+    eval_logprob = 0
+    evalDistributer.submitSentenceJobs(start_ind, end_ind)
+    parses = evalDistributer.get_parses()
+    for parse in parses:
+        if parse.success:
+            eval_logprob += parse.log_prob
+    logging.info(f"total eval logprob = {eval_logprob}")
