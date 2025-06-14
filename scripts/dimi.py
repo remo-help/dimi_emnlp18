@@ -432,7 +432,7 @@ class EarlyStopper:
      and a tolerance for the overall best result (have the logodds surpassed the best result)
     '''
 
-    def __init__(self, tolerance=3, best_tolerance=10, delta=0.5):
+    def __init__(self, tolerance=3, best_tolerance=10, delta=1.0):
         self.best_probs = -np.inf
         self.tolerance = tolerance
         self.counter = 0
