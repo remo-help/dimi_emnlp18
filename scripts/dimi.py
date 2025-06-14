@@ -385,7 +385,7 @@ def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
     logging.info("initiating eval parse")
     eval_logprob = 0
     eval_log_e = 0
-    evalDistributer.submitSentenceJobs(start_ind, end_ind)
+    evalDistributer.submitSentenceJobs(start_ind, end_ind, eval_run=True)
     parses = evalDistributer.get_parses()
     for parse in parses:
         if parse.success:
