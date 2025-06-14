@@ -354,7 +354,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                            last_model=last_model)
 
         if not continue_bool:
-            logging.warning(f"Early stopper has shutdown training as logodds have not been improving within tolerance."
+            logging.warning(f"Early stopper has shutdown training at iter {cur_iter} as logodds have not been"
+                            f" improving within tolerance."
                             f" Consider setting early_stopping to false in config if this is undesired behavior")
 
         ## Update sentence indices for next batch:
@@ -452,14 +453,14 @@ class EarlyStopper:
             else:
                 self.best_counter += 1
                 if self.best_counter > self.best_tolerance:
-                    logging.warning(f"Stopping training last best loggods were {self.best_tolerance} evals ago")
+                    logging.warning(f"Stopping training last best logodds were {self.best_tolerance} evals ago")
                     return False
         elif logodds > (self.last_probs - self.delta):
             return True
         else:
             self.counter += 1
             if self.counter > self.tolerance:
-                logging.warning(f"Stopping training last loggods improvement was {self.tolerance} evals ago")
+                logging.warning(f"Stopping training last loggodds improvement was {self.tolerance} evals ago")
                 return False
             else:
                 return True
