@@ -136,6 +136,10 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
         logging.info(f"eval: {eval_sequences[0:2]}")
         logging.info(f"train: {ev_seqs[0:2]}")
+        if str2bool(params.get('early_stopping', fallback=True)):
+            early_stopper = EarlyStopper()
+        else:
+            early_stopper = False
     else:
         eval_start_ind = None
         eval_end_ind = None
@@ -240,8 +244,9 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     best_iter = 0
     best_eval_iter = 0
     warming_period = False
+    continue_bool = False
     ### Start doing actual sampling:
-    while cur_iter < iters:
+    while cur_iter < iters and continue_bool:
         sent_list = []
         pcfg_model.iter = cur_iter
         logging.info('Parsing started Now. Sink loading the sentences.')
@@ -416,3 +421,22 @@ def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
     logging.info(f"total eval logprob = {eval_logprob / np.log10(np.e)}")
     logging.info(f"total eval logprob = {eval_log_e}")
     return eval_logprob
+
+
+class EarlyStopper:
+    def __init__(self, tolerance=2):
+        self.best_probs = -np.inf
+        self.tolerance = tolerance
+        self.counter =0
+
+    def update(self, logodds):
+        if logodds > self.best_probs:
+            self.best_probs = logodds
+            self.counter = 0
+            return True
+        else:
+            self.counter +=1
+            if self.counter > self.tolerance:
+                return False
+            else:
+                return True

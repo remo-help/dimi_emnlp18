@@ -94,7 +94,7 @@ class PyzmqWorker:
             #     logging.info('after get model')
             logging.debug("Worker %d preparing to process new model" % self.tid)
 
-
+            logging.debug(f"Worker %d preparing to process new model at {self.model_file_sig}")
             logging.debug("Worker %d doing finite model inference" % (self.tid))
                     #print("Observation model type is %s" % (type(model_wrapper.model[0].lex)))
             self.cky_sampler.set_models(*models)
