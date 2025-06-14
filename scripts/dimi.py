@@ -197,7 +197,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         hid_seqs = [None] * num_sents
 
         cur_iter = pcfg_model.iter
-    workDistributer = WorkDistributerServer(ev_seqs, working_dir)
+    workDistributer = WorkDistributerServer(ev_seqs, working_dir, eval_sequences)
     logging.info("GPU is %s with %d workers and batch size %d" % (gpu, num_gpu_workers, batch_per_worker))
     logging.info("Start a new worker with python3 scripts/workers.py %s %d %d %d %d %d %d" % (
     workDistributer.host, workDistributer.jobs_port, workDistributer.results_port, workDistributer.models_port,
@@ -320,7 +320,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         if eval_sequences:
             eval_logprob = -np.inf
             if cur_iter % eval_interval == 0 and cur_iter !=0:
-                eval_logprob = eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
+                eval_logprob = eval_pass(workDistributer, eval_start_ind, eval_end_ind)
 
             if np.isinf(best_log_prob):
                 best_log_prob = total_logprobs
