@@ -248,11 +248,12 @@ class ModelDistributer(Thread):
 
 class WorkDistributerServer():
 
-    def __init__(self, sent_list, working_dir):
+    def __init__(self, sent_list, working_dir, eval_list=None):
 
         ## Set up job distribution servers:
         self.host = get_local_ip()
         self.sent_list = sent_list
+        self.eval_list = eval_list
 
         context = zmq.Context()
 
