@@ -145,6 +145,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
 
     if str2bool(params.get('early_stopping', True)):
         early_stopper = EarlyStopper()
+        logging.info(f"Early stopping enabled. Tolerances are: {early_stopper.tolerance} "
+                     f"and {early_stopper.best_tolerance}")
     else:
         early_stopper = False
     logging.info("Initializing state: K is {}; D is {}; MaxLen is {}".format(K, D, max_len))
