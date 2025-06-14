@@ -308,7 +308,6 @@ class WorkDistributerServer():
             time.sleep(0.05)
 
     def submitSentenceJobs_eval(self, start=-1, end=-1, sent_index_list=None):
-        logging.info("starting an eval ")
         ind = 0
         num_done = 0
         self.model_server.reset_models()

@@ -134,8 +134,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         eval_interval = int(params.get('eval_interval', 5))
         evalDistributer = WorkDistributerServer(eval_sequences, working_dir)
         logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
-        logging.info(f"eval: {eval_sequences[0:2]}")
-        logging.info(f"train: {ev_seqs[0:2]}")
     else:
         eval_start_ind = None
         eval_end_ind = None
