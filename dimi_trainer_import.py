@@ -14,6 +14,7 @@ from random import randint, random
 import time
 import multiprocessing
 
+
 def main(argv, name="example"):
     if len(argv) < 1:
         sys.stderr.write("One required argument: <Config file|Resume directory>\n")
@@ -53,11 +54,9 @@ def main(argv, name="example"):
             config['params']['init_alpha'] = init_alpha
         out_dir += name
 
-
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
         resume = False
-
 
         with open(out_dir + "/config.ini", 'w+') as configfile:
             config.write(configfile)
@@ -68,15 +67,14 @@ def main(argv, name="example"):
     input_file = config.get('io', 'input_file')
     working_dir = config.get('io', 'working_dir', fallback=out_dir)
     dict_file = config.get('io', 'dict_file')
-    eval_file = config.get('io', 'eval_file', fallback=None)
+    eval_file = config.get('io', 'eval_path', fallback=None)
 
     ## Read in input file to get sequence for X
     (pos_seq, word_seq) = io.read_input_file(input_file)
     if eval_file:
-        eval_seqs = io.read_input_file(eval_file)
+        _, eval_seqs = io.read_input_file(eval_file)
     else:
         eval_seqs = None
-
 
     params = read_params(config)
     params['output_dir'] = out_dir
@@ -99,7 +97,7 @@ def main(argv, name="example"):
         word_vecs = io.read_word_vector_file(params.get('word_vecs_file'), io.read_dict_file(dict_file))
     dimi.wrapped_sample_beam(word_seq, params, working_dir, gold_seqs=gold_seq,
                              word_vecs=word_vecs,
-                             word_dict_file = dict_file, resume=resume, eval_sequences=eval_seqs)
+                             word_dict_file=dict_file, resume=resume, eval_sequences=eval_seqs)
 
 
 def read_params(config):
@@ -110,4 +108,3 @@ def read_params(config):
         params[key] = val
 
     return params
-
