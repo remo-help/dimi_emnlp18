@@ -314,7 +314,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
                            productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
         if eval_sequences:
-            if cur_iter % eval_interval:
+            if cur_iter % eval_interval == 0:
                 eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
 
 
@@ -370,8 +370,11 @@ def handle_sigint(signum, frame, workers, work_server):
 def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
     logging.info("initiating eval parse")
     eval_logprob = 0
+    logging.info("submitting jobs")
     evalDistributer.submitSentenceJobs(start_ind, end_ind)
+    logging.info("getting parses")
     parses = evalDistributer.get_parses()
+    logging.info("iterating parses")
     for parse in parses:
         if parse.success:
             eval_logprob += parse.log_prob
