@@ -9,6 +9,7 @@ import sys
 import copy
 import torch
 import multiprocessing
+import numpy as np
 from .WorkDistributerServer import WorkDistributerServer
 from .bounded_pcfg_model import Bounded_PCFG_Model, UnBounded_PCFG_Model
 from .init_pcfg_strategies import *
@@ -383,12 +384,10 @@ def handle_sigint(signum, frame, workers, work_server):
 def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
     logging.info("initiating eval parse")
     eval_logprob = 0
-    logging.info("submitting jobs")
     evalDistributer.submitSentenceJobs(start_ind, end_ind)
-    logging.info("getting parses")
     parses = evalDistributer.get_parses()
-    logging.info("iterating parses")
     for parse in parses:
         if parse.success:
             eval_logprob += parse.log_prob
     logging.info(f"total eval logprob = {eval_logprob}")
+    logging.info(f"total eval logprob = {eval_logprob / np.log10(np.e)}")
