@@ -136,16 +136,17 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
         logging.info(f"eval: {eval_sequences[0:2]}")
         logging.info(f"train: {ev_seqs[0:2]}")
-        if str2bool(params.get('early_stopping', True)):
-            early_stopper = EarlyStopper()
-        else:
-            early_stopper = False
     else:
         eval_start_ind = None
         eval_end_ind = None
         eval_interval = None
         evalDistributer = None
         logging.info(f"eval sequs not enabled")
+
+    if str2bool(params.get('early_stopping', True)):
+        early_stopper = EarlyStopper()
+    else:
+        early_stopper = False
     logging.info("Initializing state: K is {}; D is {}; MaxLen is {}".format(K, D, max_len))
 
     rnn_model_file = os.path.join(working_dir, 'rnn_model.pkl')
@@ -346,10 +347,15 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         logging.info("The log prob for this iter is {}".format(total_logprobs))
         pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
                            productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
-        #if eval_sequences:
-        #    if cur_iter % eval_interval == 0 and cur_iter !=0:
-        #        eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
+        if early_stopper:
+            if eval_sequences:
+                continue_bool = early_stopper.update(eval_logprob)
+            else:
+                continue_bool = early_stopper.update(total_logprob)
 
+        if not continue_bool:
+            logging.warning(f"Early stopper has shutdown training as logodds have not been improving within tolerance."
+                            f" Consider setting early_stopping to false in config if this is undesired behavior")
 
         ## Update sentence indices for next batch:
         if batch_per_update < num_sents:
@@ -425,16 +431,30 @@ def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
 
 
 class EarlyStopper:
-    def __init__(self, tolerance=2):
+    '''
+    This counter sends a boolean depending on whether the logodds have gone up or down over the last iterations. It has
+     a tolerance counter for both the immediate slope (have the logodds gone up since the last check)
+     and a tolerance for the overall best result (have the logodds surpassed the best result)
+    '''
+    def __init__(self, tolerance=3, best_tolerance=10):
         self.best_probs = -np.inf
         self.tolerance = tolerance
         self.counter =0
+        self.best_counter = 0
+        self.last_probs = -np.inf
+        self.best_tolerance = best_tolerance
 
     def update(self, logodds):
-        if logodds > self.best_probs:
-            self.best_probs = logodds
+        if logodds > self.last_probs:
+            self.last_probs = logodds
             self.counter = 0
-            return True
+            if logodds > self.best_probs:
+                self.best_probs = logodds
+                return True
+            else:
+                self.best_counter +=1
+                if self.best_counter > self.best_tolerance:
+                    return False
         else:
             self.counter +=1
             if self.counter > self.tolerance:
