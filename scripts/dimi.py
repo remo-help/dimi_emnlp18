@@ -132,7 +132,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         eval_start_ind = 0
         eval_end_ind = min(len(eval_sequences), batch_per_update)
         eval_interval = int(params.get('eval_interval', 5))
-        evalDistributer = WorkDistributerServer(eval_sequences, working_dir)
         logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
     else:
         eval_start_ind = None
@@ -212,10 +211,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     if num_cpu_workers + num_gpu_workers > 0:
         inf_procs = start_local_workers_with_distributer(workDistributer, max_len, num_cpu_workers, num_gpu_workers, gpu,
                                                          batch_per_worker, K=K, D=D)
-        if eval_sequences:
-            eval_inf_procs = start_local_workers_with_distributer(evalDistributer, max_len, num_cpu_workers, num_gpu_workers,
-                                                             gpu,
-                                                             batch_per_worker, K=K, D=D)
 
     elif cluster_cmd != None:
         start_cluster_workers(workDistributer, cluster_cmd, max_len, gpu, K=K, D=D, batch_size=batch_per_worker)
@@ -231,8 +226,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             print('OK', file=c)
 
     signal.signal(signal.SIGINT, lambda x, y: handle_sigint(x, y, inf_procs, workDistributer))
-    if eval_sequences:
-        signal.signal(signal.SIGINT, lambda x, y: handle_sigint(x, y, eval_inf_procs, evalDistributer))
 
     max_loglikelihood = -np.inf
     best_init_model = None
@@ -382,16 +375,12 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     for cur_proc in range(0, num_cpu_workers+num_gpu_workers):
         logging.info("Sending terminate signal to worker {} ...".format(cur_proc))
         inf_procs[cur_proc].terminate()
-        if eval_sequences:
-            eval_inf_procs[cur_proc].terminate()
 
     for cur_proc in range(0, num_cpu_workers+num_gpu_workers):
         logging.info("Waiting to join worker {} ...".format(cur_proc))
         inf_procs[cur_proc].join()
         inf_procs[cur_proc] = None
-        if eval_sequences:
-            eval_inf_procs[cur_proc].join()
-            eval_inf_procs[cur_proc] = None
+
 
     logging.info("Sampling complete.")
     if eval_sequences:
@@ -454,10 +443,12 @@ class EarlyStopper:
             else:
                 self.best_counter +=1
                 if self.best_counter > self.best_tolerance:
+                    logging.warning(f"Stopping training last best loggods were {self.best_tolerance} evals ago")
                     return False
         else:
             self.counter +=1
             if self.counter > self.tolerance:
+                logging.warning(f"Stopping training last loggods improvement was {self.tolerance} evals ago")
                 return False
             else:
                 return True
