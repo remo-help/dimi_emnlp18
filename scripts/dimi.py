@@ -27,7 +27,7 @@ class Sample:
         self.log_prob = 0
 
 def str2bool(v):
-    return v.lower() in ("yes", "true", "t", "1") if not bool(v) else v
+    return v.lower() in ("yes", "true", "t", "1") if type(v) is not bool else v
 
 def wrapped_sample_beam(*args, **kwargs):
     try:
