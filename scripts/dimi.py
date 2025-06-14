@@ -138,6 +138,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         eval_end_ind = None
         eval_interval = None
         evalDistributer = None
+        logging.info(f"eval sequs not enabled")
     logging.info("Initializing state: K is {}; D is {}; MaxLen is {}".format(K, D, max_len))
 
     rnn_model_file = os.path.join(working_dir, 'rnn_model.pkl')
