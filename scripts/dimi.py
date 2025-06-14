@@ -320,7 +320,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
                            productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
         if eval_sequences:
-            if cur_iter % eval_interval == 0:
+            if cur_iter % eval_interval == 0 and cur_iter !=0:
                 eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
 
 
