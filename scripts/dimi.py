@@ -18,6 +18,8 @@ from .pcfg_translator import *
 from .workers import start_local_workers_with_distributer, start_cluster_workers
 from .dimi_io import write_linetrees_file, read_gold_pcfg_file
 from collections import Counter, defaultdict
+
+
 # Has a state for every word in the corpus
 # What's the state of the system at one Gibbs sampling iteration?
 class Sample:
@@ -26,8 +28,10 @@ class Sample:
         self.models = None
         self.log_prob = 0
 
+
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1") if type(v) is not bool else v
+
 
 def wrapped_sample_beam(*args, **kwargs):
     try:
@@ -37,6 +41,7 @@ def wrapped_sample_beam(*args, **kwargs):
         logging.warning('Sampling beam function has errored out!')
         raise e
         exit(0)
+
 
 # This is the main entry point for this module.
 # Arg 1: ev_seqs : a list of lists of integers, representing
@@ -79,7 +84,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     try:
         num_cpu_workers = int(params.get('cpu_workers', 0))
     except ValueError as err:
-        if params.get('cpu_workers', 0)=='auto':
+        if params.get('cpu_workers', 0) == 'auto':
             # import multiprocessing
             num_cpu_workers = multiprocessing.cpu_count()
         else:
@@ -92,7 +97,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     gpu = bool(int(params.get('gpu', 0)))
     if gpu and num_gpu_workers < 1 and num_cpu_workers > 0:
         logging.warning("Inconsistent config: gpu flag set with %d gpu workers; setting gpu=False"
-                      % (num_gpu_workers))
+                        % (num_gpu_workers))
         gpu = False
 
     resume_iter = int(params.get("resume_iter", -1))
@@ -111,7 +116,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                 line = line.strip().split(' = ')
                 gold_pos_dict[int(line[0])] = int(line[1])
 
-
     if (gold_seqs != None and 'num_gold_sents' in params):
         logging.info('Using gold tags for %s sentences.' % str(params['num_gold_sents']))
 
@@ -123,7 +127,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         logging.info("Using default seed for random number generator.")
 
     logging.info("Total number of tokens: {}, number of nodes: {}".format(sum(sent_lens),
-                                                                          sum(sent_lens)*2))
+                                                                          sum(sent_lens) * 2))
 
     samples = []
     start_ind = 0
@@ -181,11 +185,11 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             else:
                 pcfg_runtime_stats = open(os.path.join(working_dir, 'pcfg_hypparams.txt'))
                 num_iter = int(pcfg_runtime_stats.readlines()[-1].split('\t')[0])
-            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_'+str(
-                num_iter)+'.pkl'), 'rb'))
+            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_' + str(
+                num_iter) + '.pkl'), 'rb'))
         except:
-            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_'+str(
-                num_iter-1)+'.pkl'), 'rb'))
+            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_' + str(
+                num_iter - 1) + '.pkl'), 'rb'))
 
         dnn_obs_model = None
         logging.info("Conitinuing from iteration {}".format(num_iter))
@@ -200,16 +204,16 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     workDistributer = WorkDistributerServer(ev_seqs, working_dir, eval_sequences)
     logging.info("GPU is %s with %d workers and batch size %d" % (gpu, num_gpu_workers, batch_per_worker))
     logging.info("Start a new worker with python3 scripts/workers.py %s %d %d %d %d %d %d" % (
-    workDistributer.host, workDistributer.jobs_port, workDistributer.results_port, workDistributer.models_port,
-    max_len + 1, int(gpu), batch_per_worker))
-
+        workDistributer.host, workDistributer.jobs_port, workDistributer.results_port, workDistributer.models_port,
+        max_len + 1, int(gpu), batch_per_worker))
 
     ## Initialize all the sub-processes with their input-output queues
     ## and dimensions of matrix they'll need
     logging.info("Starting workers")
 
     if num_cpu_workers + num_gpu_workers > 0:
-        inf_procs = start_local_workers_with_distributer(workDistributer, max_len, num_cpu_workers, num_gpu_workers, gpu,
+        inf_procs = start_local_workers_with_distributer(workDistributer, max_len, num_cpu_workers, num_gpu_workers,
+                                                         gpu,
                                                          batch_per_worker, K=K, D=D)
 
     elif cluster_cmd != None:
@@ -217,12 +221,12 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     else:
         master_config_file = os.path.join(working_dir, 'masterConfig.txt')
         with open(master_config_file, 'w') as c:
-            print({'host':workDistributer.host, 'jobs_port':workDistributer.jobs_port,
-                   'results_port':workDistributer.results_port,
-                    'models_port':workDistributer.models_port,
-                   'max_len':max_len + 1,
-                   'gpu':int(gpu),
-                    'batch_size':batch_per_worker, 'K':K, 'D':D}, file=c)
+            print({'host': workDistributer.host, 'jobs_port': workDistributer.jobs_port,
+                   'results_port': workDistributer.results_port,
+                   'models_port': workDistributer.models_port,
+                   'max_len': max_len + 1,
+                   'gpu': int(gpu),
+                   'batch_size': batch_per_worker, 'K': K, 'D': D}, file=c)
             print('OK', file=c)
 
     signal.signal(signal.SIGINT, lambda x, y: handle_sigint(x, y, inf_procs, workDistributer))
@@ -292,7 +296,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         pcfg_model.log_probs = total_logprobs
         pcfg_model.right_branching_tendency = r_branches / (l_branches + r_branches)
         logging.info("iter {} has a right branching tendency score of {:.2f}".format(cur_iter,
-                                                                                 pcfg_model.right_branching_tendency))
+                                                                                     pcfg_model.right_branching_tendency))
         if params.get("print_trees", False):
             linetrees_fn = 'iter_' + str(cur_iter) + '.linetrees'
             full_fn = os.path.join(working_dir, linetrees_fn)
@@ -306,14 +310,14 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             else:
                 pprint_bool = False
             p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
-                                                                       pcfg_model.word_dict,
-                                                                       full_fn, pprint_bool))
+                                                                           pcfg_model.word_dict,
+                                                                           full_fn, pprint_bool))
             p.daemon = True
             p.start()
 
         if eval_sequences:
             eval_logprob = -np.inf
-            if cur_iter % eval_interval == 0 and cur_iter !=0:
+            if cur_iter % eval_interval == 0 and cur_iter != 0:
                 eval_logprob = eval_pass(workDistributer, eval_start_ind, eval_end_ind)
 
             if np.isinf(best_log_prob):
@@ -337,14 +341,17 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             else:
                 best_model = False
 
-        logging.info("The log prob for this iter is {}".format(total_logprobs))
-        pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
-                           productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
         if early_stopper:
             if eval_sequences:
                 continue_bool = early_stopper.update(eval_logprob)
             else:
                 continue_bool = early_stopper.update(total_logprob)
+        last_model = not continue_bool
+
+        logging.info("The log prob for this iter is {}".format(total_logprobs))
+        pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
+                           productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model,
+                           last_model=last_model)
 
         if not continue_bool:
             logging.warning(f"Early stopper has shutdown training as logodds have not been improving within tolerance."
@@ -372,15 +379,14 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     logging.debug("Ending sampling")
     workDistributer.stop()
 
-    for cur_proc in range(0, num_cpu_workers+num_gpu_workers):
+    for cur_proc in range(0, num_cpu_workers + num_gpu_workers):
         logging.info("Sending terminate signal to worker {} ...".format(cur_proc))
         inf_procs[cur_proc].terminate()
 
-    for cur_proc in range(0, num_cpu_workers+num_gpu_workers):
+    for cur_proc in range(0, num_cpu_workers + num_gpu_workers):
         logging.info("Waiting to join worker {} ...".format(cur_proc))
         inf_procs[cur_proc].join()
         inf_procs[cur_proc] = None
-
 
     logging.info("Sampling complete.")
     if eval_sequences:
@@ -403,7 +409,7 @@ def handle_sigint(signum, frame, workers, work_server):
     raise SystemExit
 
 
-def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
+def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind):
     logging.info("initiating eval parse")
     eval_logprob = 0
     eval_log_e = 0
@@ -425,10 +431,11 @@ class EarlyStopper:
      a tolerance counter for both the immediate slope (have the logodds gone up since the last check)
      and a tolerance for the overall best result (have the logodds surpassed the best result)
     '''
+
     def __init__(self, tolerance=3, best_tolerance=10):
         self.best_probs = -np.inf
         self.tolerance = tolerance
-        self.counter =0
+        self.counter = 0
         self.best_counter = 0
         self.last_probs = -np.inf
         self.best_tolerance = best_tolerance
@@ -441,12 +448,12 @@ class EarlyStopper:
                 self.best_probs = logodds
                 return True
             else:
-                self.best_counter +=1
+                self.best_counter += 1
                 if self.best_counter > self.best_tolerance:
                     logging.warning(f"Stopping training last best loggods were {self.best_tolerance} evals ago")
                     return False
         else:
-            self.counter +=1
+            self.counter += 1
             if self.counter > self.tolerance:
                 logging.warning(f"Stopping training last loggods improvement was {self.tolerance} evals ago")
                 return False
