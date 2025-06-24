@@ -130,6 +130,45 @@ class CKY_sampler:
 
             self.stream_generator = self._stream_gen()
 
+    def inside_sample_eval(self, sent):
+        success = 0
+        tries = 0
+        while not success:
+            if tries > 10:
+                raise Exception('overflowing/underflowing problem unsolvable!')
+            tries += 1
+            try:
+                if self.gpu:
+                    self.cublas.scal(0., self.decr_chart_flat)
+                self.compute_inside(sent)
+                logprob = self.sample_inside_probs(sent)
+                success = True
+            except OverflowException as oe:
+                rescaler = 1e-1
+                logging.warning("overflow detected. curent scaler is {}, rescaler is {}. "
+                                "number of tries {}".format(
+                    self.scaler, rescaler, tries))
+                self._init_chart() # flush the temp vectors and chart vectors
+                self._scale_lexis(self.lexis, rescaler)
+                logging.warning(oe)
+            except UnderflowException as ue:
+                rescaler = 1e1
+                logging.warning("underflow detected. curent scaler is {}, rescaler is {}. "
+                                "number of tries {}".format(
+                    self.scaler, rescaler, tries))
+                self._init_chart()  # flush the temp vectors and chart vectors
+                self._scale_lexis(self.lexis, rescaler)
+                logging.warning(ue)
+            except:
+                raise
+        self.this_sent_len = -1
+        assert logprob < 0, 'weird logprob {}!'.format(logprob)
+        # this_tree, production_counter_dict, lr_branches = nodes_to_tree(nodes, sent)
+        # print(this_tree)
+        # print(self.counter)
+        self.counter += 1
+        #return this_tree, logprob, production_counter_dict, lr_branches
+        return logprob
 
     def inside_sample(self, sent):
         # print(sent)
@@ -241,7 +280,16 @@ class CKY_sampler:
                 # logging.info(self.chart[i, i+1].shape)
                 # logging.info(self.lexis[w].shape)
                 # logging.info("{}, {}, {}, {}".format(self.Q, self.K, self.D, self.max_len))
-                np.copyto(self.chart[i, i+1], self.lexis[w])
+                try:
+                    np.copyto(self.chart[i, i+1], self.lexis[w])
+                except:
+                    print(w)
+                    print(self.lexis[w])
+                    print(i)
+                    print(self.chart.shape)
+                    print(self.chart[i, i+1])
+                    print(sent)
+                    exit()
 
         if self.gpu:
             nnz = self.G.nnz
@@ -492,7 +540,6 @@ class CKY_sampler:
                 print('Dart is {}, k marginal {}; a likelihood {}'.format(k_dart, k_marginal, a_likelihood))
                 print(likelihoods)
                 raise UnderflowException
-
         return expanded_nodes, logprob #, rules
 
     @staticmethod
@@ -524,6 +571,27 @@ class CKY_sampler:
                 self.cublas.scal(rescaler, self.lexis_flat)
             else:
                 self.lexis *= rescaler
+
+    def sample_inside_probs(self, sent):
+        # this is used to just get sequence probabilities
+        expanding_nodes = []
+        expanded_nodes = []
+        # rules = []
+        assert self.this_sent_len > 0, "must call inside pass first!"
+        sent_len = self.this_sent_len
+        topnode_pdf = self.chart[0, self.this_sent_len]
+        # draw the top node
+        if not self.gpu:
+            p_topnode = (topnode_pdf * self.p0).astype(np.float64)
+            probs = np.log10(np.sum(p_topnode))
+            scaler = - sent_len * np.log10(self.scaler)
+            sequence_logprob = probs + scaler
+        else:
+            p_topnode = (topnode_pdf * self.p0).astype(np.float64)
+            probs = np.log10(np.sum(p_topnode))
+            scaler = - sent_len * np.log10(self.scaler)
+            sequence_logprob = probs + scaler
+        return sequence_logprob
 
 class OverflowException(Exception):
     def __init__(self, *args):

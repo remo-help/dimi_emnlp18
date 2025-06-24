@@ -210,7 +210,7 @@ class PyzmqWorker:
                         raise
 
                 if (self.batch_size == 1 and sent_index % self.out_freq == 0) or (self.batch_size > 1 and (sent_index // self.out_freq != (sent_index+len(sent_batch)) // self.out_freq)):
-                    logging.info("Processed sentence {0} (Worker {1})".format(sent_index, self.tid))
+                    logging.debug("Processed sentence {0} (Worker {1})".format(sent_index, self.tid))
 
                 t1 = time.time()
 
