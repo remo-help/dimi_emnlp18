@@ -144,6 +144,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         eval_logprob = -np.inf
         if str2bool(params.get('save_evals', True)):
             save_evals = True
+            save_logprobs = None
     else:
         eval_start_ind = None
         eval_end_ind = None
@@ -410,7 +411,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         cur_iter += 1
         if params.get("print_trees", False):
             p.join()
-    if save_evals:
+    if save_evals and save_logprobs:
         save_eval_probs(save_logprobs, working_dir, best_probs=False)
     logging.debug("Ending sampling")
     workDistributer.stop()

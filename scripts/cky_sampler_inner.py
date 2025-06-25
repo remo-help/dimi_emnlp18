@@ -9,10 +9,10 @@ class CKY_sampler:
     def __init__(self, K=0, D=0, max_len=40, gpu=False):
         assert D != 0 and K != 0, 'Sampler initialization error: K {}, D {}'.format(K, D)
         if gpu:
-            _temp = __import__('pyculib', fromlist=['sparse', 'blas', 'rand'])
-            self.cusparse_p = _temp.sparse
-            self.blas_p = _temp.blas
-            self.rand_p = _temp.rand
+            #_temp = __import__('pyculib', fromlist=['sparse', 'blas', 'rand'])
+            self.cusparse_p = cuda.sparse
+            self.blas_p = cuda.blas
+            self.rand_p = cuda.rand
             self.kernels = __import__('kernels')
         # logging.info("sampler: getting K {} and D {}".format(K, D))
         self.K = K
