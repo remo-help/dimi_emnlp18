@@ -142,6 +142,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         eval_interval = int(params.get('eval_interval', 5))
         logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
         eval_logprob = -np.inf
+        if str2bool(params.get('save_evals', True)):
+            save_evals = True
     else:
         eval_start_ind = None
         eval_end_ind = None
@@ -350,7 +352,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         if eval_sequences:
             if cur_iter % eval_interval == 0 and cur_iter != 0:
                 tic = time.process_time()
-                eval_logprob = eval_pass(workDistributer, eval_start_ind, eval_end_ind)
+                eval_logprob, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                         )
                 toc = time.process_time()
                 logging.info(toc - tic)
                 #tic = time.process_time()
@@ -361,13 +364,19 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                     continue_bool = early_stopper.update(eval_logprob)
                     last_model = not continue_bool
                     if last_model:
+                        if save_evals:
+                            save_eval_probs(save_logprobs, working_dir)
                         pcfg_model.save(dnn=dnn_obs_model, last_model=last_model)
             if best_eval_prob < eval_logprob:
+                logging.info(f"eval logprobs have improved by {eval_logprob-best_eval_prob}")
                 best_eval_prob = eval_logprob
                 best_log_prob = best_eval_prob
                 pcfg_model.save(dnn=dnn_obs_model, best_model=True, last_model=last_model, best_logprob=best_log_prob)
+                if save_evals:
+                    save_eval_probs(save_logprobs, working_dir, best_probs=True)
                 best_model = True
                 best_eval_iter = cur_iter
+
             else:
                 best_model = False
 
@@ -401,7 +410,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         cur_iter += 1
         if params.get("print_trees", False):
             p.join()
-
+    if save_evals:
+        save_eval_probs(save_logprobs, working_dir, best_probs=False)
     logging.debug("Ending sampling")
     workDistributer.stop()
 
@@ -443,16 +453,27 @@ def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind):
     eval_log_e = 0
     evalDistributer.submitSentenceJobs_eval(start_ind, end_ind)
     parses = evalDistributer.get_parses()
+    logprobs = []
     assert len(parses) == end_ind - start_ind
     for parse in parses:
         if parse.success:
             eval_logprob += parse.log_prob
             eval_log_e += parse.log_prob / np.log10(np.e)
+            logprobs.append(parse.log_prob / np.log10(np.e))
         else:
             logging.error(f"Eval parser encountered an unparseable sequence")
     logging.info(f"total eval logprob = {eval_logprob}")
     logging.info(f"total eval logprob = {eval_log_e}")
-    return eval_logprob
+    return eval_logprob, logprobs
+
+def save_eval_probs(probs, working_dir, best_probs=False):
+    if best_probs:
+        with open(working_dir + "_eval_probs_best.pkl", 'wb+') as handle:
+            pickle.dump(np.array(probs, dtype=np.float64), handle, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        with open(working_dir + "_eval_probs.pkl", 'wb+') as handle:
+            pickle.dump(np.array(probs, dtype=np.float64), handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
 
 class EarlyStopper:
