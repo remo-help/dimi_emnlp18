@@ -367,15 +367,15 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                         if save_evals:
                             save_eval_probs(save_logprobs, working_dir)
                         pcfg_model.save(dnn=dnn_obs_model, last_model=last_model)
-            if best_eval_prob < eval_logprob:
-                logging.info(f"eval logprobs have improved by {eval_logprob-best_eval_prob}")
-                best_eval_prob = eval_logprob
-                best_log_prob = best_eval_prob
-                pcfg_model.save(dnn=dnn_obs_model, best_model=True, last_model=last_model, best_logprob=best_log_prob)
-                if save_evals:
-                    save_eval_probs(save_logprobs, working_dir, best_probs=True)
-                best_model = True
-                best_eval_iter = cur_iter
+                if best_eval_prob < eval_logprob:
+                    logging.info(f"eval logprobs have improved by {eval_logprob-best_eval_prob}")
+                    best_eval_prob = eval_logprob
+                    best_log_prob = best_eval_prob
+                    pcfg_model.save(dnn=dnn_obs_model, best_model=True, last_model=last_model, best_logprob=best_log_prob)
+                    if save_evals:
+                        save_eval_probs(save_logprobs, working_dir, best_probs=True)
+                    best_model = True
+                    best_eval_iter = cur_iter
 
             else:
                 best_model = False
