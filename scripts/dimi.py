@@ -375,7 +375,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                     pcfg_model.save(dnn=dnn_obs_model, best_model=True, last_model=last_model, best_logprob=best_log_prob)
                     if save_evals:
                         save_eval_probs(save_logprobs, working_dir, best_probs=True)
-                    best_model = True
+                    #best_model = True
                     best_eval_iter = cur_iter
 
             else:
