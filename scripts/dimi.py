@@ -503,8 +503,10 @@ class EarlyStopper:
             self.counter = 0
             if logodds > self.best_probs:
                 self.best_probs = logodds
+                self.best_counter = 0
                 return True
             elif logodds > (self.best_probs - self.delta):
+                self.best_counter = 0
                 return True
             else:
                 self.best_counter += 1
@@ -517,8 +519,12 @@ class EarlyStopper:
         else:
             self.counter += 1
             self.last_probs = logodds
+            self.best_counter += 1
             if self.counter > self.tolerance:
                 logging.warning(f"Stopping training last loggodds improvement was {self.tolerance} evals ago")
+                return False
+            elif self.best_counter > self.best_tolerance:
+                logging.warning(f"Stopping training last best logodds were {self.best_tolerance} evals ago")
                 return False
             else:
                 return True
