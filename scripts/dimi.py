@@ -57,6 +57,9 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     K = int(params.get('k'))
     sent_lens = list(map(len, ev_seqs))
 
+    from pympler.tracker import SummaryTracker
+    tracker = SummaryTracker()
+
     max_len = max(map(len, ev_seqs))
 
     if params.get('max_len', 'None') != 'None':
@@ -260,6 +263,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     last_model = False
     best_model = False
     ### Start doing actual sampling:
+    tracker.print_diff()
     while cur_iter < iters and continue_bool:
         sent_list = []
         pcfg_model.iter = cur_iter
@@ -418,6 +422,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     if save_evals and save_logprobs:
         save_eval_probs(save_logprobs, working_dir, best_probs=False)
     logging.debug("Ending sampling")
+    tracker.print_diff()
     workDistributer.stop()
 
     for cur_proc in range(0, num_cpu_workers + num_gpu_workers):
