@@ -263,6 +263,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     last_model = False
     best_model = False
     ### Start doing actual sampling:
+    print('tracker before starting')
     tracker.print_diff()
     while cur_iter < iters and continue_bool:
         sent_list = []
@@ -312,6 +313,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                     logging.error('The index is %d' % parse.index)
                     raise
                 total_logprobs += parse.log_prob
+            # TODO: Check if the state list is related to suspected memory leak
             hid_seqs[parse.index] = parse.state_list
         pcfg_model.log_probs = total_logprobs
         pcfg_model.right_branching_tendency = r_branches / (l_branches + r_branches)
@@ -417,11 +419,14 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         #         pickle.dump(dnn_obs_model, rfn)
         #
         cur_iter += 1
+        print(f'tracker after iter {cur_iter}')
+        tracker.print_diff()
         if params.get("print_trees", False):
             p.join()
     if save_evals and save_logprobs:
         save_eval_probs(save_logprobs, working_dir, best_probs=False)
     logging.debug("Ending sampling")
+    print('tracker after sampling')
     tracker.print_diff()
     workDistributer.stop()
 
