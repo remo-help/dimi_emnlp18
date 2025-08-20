@@ -278,10 +278,7 @@ class CKY_sampler:
                 # assert np.array_equal(self.chart[i, i+1].copy_to_host(), self.lexis_cpu[w]), "{}, {}".format(self.chart[i, i+1].copy_to_host(), self.lexis_cpu[w])
             else:
                 # logging.info(self.chart[i, i+1].shape)
-                logging.info(self.lexis[w].shape)
-                print(self.lexis[w])
-                print(w)
-                print(sent)
+                # logging.info(self.lexis[w].shape)
                 # logging.info("{}, {}, {}, {}".format(self.Q, self.K, self.D, self.max_len))
                 try:
                     np.copyto(self.chart[i, i+1], self.lexis[w])
