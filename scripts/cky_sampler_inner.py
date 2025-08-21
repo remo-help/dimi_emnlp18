@@ -287,8 +287,8 @@ class CKY_sampler:
                     print(self.lexis[w])
                     print(i)
                     print(self.chart.shape)
-                    print(self.chart[i, i+1])
                     print(sent)
+                    print(self.chart[i, i+1])
                     exit()
 
         if self.gpu:
