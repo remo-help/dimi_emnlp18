@@ -432,9 +432,10 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
 
     logging.info("Sampling complete.")
     if eval_sequences:
-        logging.info(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
-        logging.info(f"Best eval logprobability base e found at iter {best_eval_iter} with logprobability "
-                     f"{best_eval_prob/np.log10(np.e)}.")
+        if best_eval_iter > cur_iter-(eval_interval*2):
+            logging.warning(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
+        else:
+            logging.info(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
     else:
         logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
     # return samples
