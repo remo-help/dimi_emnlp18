@@ -249,12 +249,13 @@ class ModelDistributer(Thread):
 
 class WorkDistributerServer():
 
-    def __init__(self, sent_list, working_dir, eval_list=None):
+    def __init__(self, sent_list, working_dir, eval_list=None, dev_list=None):
 
         ## Set up job distribution servers:
         self.host = get_local_ip()
         self.sent_list = sent_list
         self.eval_list = eval_list
+        self.dev_list = dev_list
 
         context = zmq.Context()
 
@@ -307,7 +308,7 @@ class WorkDistributerServer():
         while self.sink.getProcessing():
             time.sleep(0.05)
 
-    def submitSentenceJobs_eval(self, start=-1, end=-1, sent_index_list=None):
+    def submitSentenceJobs_eval(self, start=-1, end=-1, sent_index_list=None, dev=False):
         ind = 0
         num_done = 0
         self.model_server.reset_models()
@@ -315,12 +316,19 @@ class WorkDistributerServer():
         # print(start, end, 'submit')
         if sent_index_list is not None:
             for i, sent in enumerate(sent_index_list):
-                self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.eval_list[sent])
+                if dev:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.dev_list[sent])
                                           ) )
+                else:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.eval_list[sent])
+                                              ))
             self.sink.setBatchSize(len(sent_index_list))
         elif start >= 0 and end >= 0:
             for i in range(start, end):
-                self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.eval_list[i]) ) )
+                if dev:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.dev_list[i]) ) )
+                else:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.eval_list[i])))
 
             self.sink.setBatchSize(end-start)
 

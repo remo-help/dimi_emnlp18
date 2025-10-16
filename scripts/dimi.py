@@ -23,7 +23,6 @@ from collections import Counter, defaultdict
 from .cky_sampler_inner import CKY_sampler
 
 
-
 # Has a state for every word in the corpus
 # What's the state of the system at one Gibbs sampling iteration?
 class Sample:
@@ -52,7 +51,8 @@ def wrapped_sample_beam(*args, **kwargs):
 # the EVidence SEQuenceS seen by the user (e.g., words in a sentence
 # mapped to ints).
 def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
-                word_dict_file=None, word_vecs=None, resume=False, eval_sequences=None):
+                word_dict_file=None, word_vecs=None, resume=False, eval_sequences=None,
+                dev_sequences=None):
     global K
     K = int(params.get('k'))
     sent_lens = list(map(len, ev_seqs))
@@ -149,11 +149,21 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         if str2bool(params.get('save_evals', True)):
             save_evals = True
             save_logprobs = None
+        if dev_sequences:
+            dev_start_ind = 0
+            dev_end_ind = len(dev_sequences)
+            logging.info(f"Using dev sequences of length: {len(dev_sequences)}")
+        else:
+            dev_start_ind = None
+            dev_end_ind = None
+
     else:
         eval_start_ind = None
         eval_end_ind = None
         eval_interval = None
         evalDistributer = None
+        dev_start_ind = None
+        dev_end_ind = None
         logging.info(f"eval sequs not enabled")
 
     if str2bool(params.get('early_stopping', True)):
@@ -215,7 +225,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         hid_seqs = [None] * num_sents
 
         cur_iter = pcfg_model.iter
-    workDistributer = WorkDistributerServer(ev_seqs, working_dir, eval_sequences)
+    workDistributer = WorkDistributerServer(ev_seqs, working_dir, eval_sequences, dev_list=dev_sequences)
     logging.info("GPU is %s with %d workers and batch size %d" % (gpu, num_gpu_workers, batch_per_worker))
     logging.info("Start a new worker with python3 scripts/workers.py %s %d %d %d %d %d %d" % (
         workDistributer.host, workDistributer.jobs_port, workDistributer.results_port, workDistributer.models_port,
@@ -274,7 +284,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         parses = workDistributer.get_parses()
         # print(len(parses))
 
-
         assert len(parses) == end_ind - start_ind or len(parses) == len(sent_list), 'wrong number of parses received!'
 
         total_logprobs = 0
@@ -332,8 +341,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             p.daemon = True
             p.start()
 
-
-
         if not eval_sequences:
             if np.isinf(best_log_prob):
                 best_log_prob = total_logprobs
@@ -358,8 +365,12 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         if eval_sequences:
             if cur_iter % eval_interval == 0 and cur_iter != 0:
                 tic = time.process_time()
-                eval_logprob, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
-                                         )
+                if dev_sequences:
+                    eval_logprob, _ = eval_pass(workDistributer, dev_start_ind, dev_end_ind,
+                                                            dev=True)
+                else:
+                    eval_logprob, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                                            dev=False)
                 toc = time.process_time()
                 logging.info(toc - tic)
                 #tic = time.process_time()
@@ -371,14 +382,24 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                     last_model = not continue_bool
                     if last_model:
                         if save_evals:
+                            if dev_sequences:
+                                _, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                                                        dev=False)
                             save_eval_probs(save_logprobs, working_dir)
                         pcfg_model.save(dnn=dnn_obs_model, last_model=last_model)
                 if best_eval_prob < eval_logprob:
-                    logging.info(f"eval logprobs have improved by {eval_logprob-best_eval_prob}")
+                    logging.info(f"eval logprobs have improved by {eval_logprob - best_eval_prob}")
                     best_eval_prob = eval_logprob
                     best_log_prob = best_eval_prob
-                    pcfg_model.save(dnn=dnn_obs_model, best_model=True, last_model=last_model, best_logprob=best_log_prob)
+                    pcfg_model.save(dnn=dnn_obs_model, best_model=True, last_model=last_model,
+                                    best_logprob=best_log_prob)
                     if save_evals:
+                        if dev_sequences:
+                            # if we use dev sequences, then we need to make sure we calculate the
+                            # logprobs of the testing set instead
+                            _, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                                                    dev=False)
+                            logging.info(f" saving test logprobs {np.sum(save_logprobs)}")
                         save_eval_probs(save_logprobs, working_dir, best_probs=True)
                     #best_model = True
                     best_eval_iter = cur_iter
@@ -386,10 +407,8 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             else:
                 best_model = False
 
-
         if eval_sequences:
             best_log_prob = best_eval_prob
-
 
         iter_toc = time.time()
         logging.info(f"Parsing is done! Finished iter {cur_iter} in {iter_toc - iter_tic} seconds")
@@ -417,6 +436,11 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         if params.get("print_trees", False):
             p.join()
     if save_evals and save_logprobs:
+        if dev_sequences:
+            # if we use dev sequences, then we need to make sure we calculate the
+            # logprobs of the testing set instead
+            _, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                         dev=False)
         save_eval_probs(save_logprobs, working_dir, best_probs=False)
     logging.debug("Ending sampling")
     workDistributer.stop()
@@ -432,10 +456,12 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
 
     logging.info("Sampling complete.")
     if eval_sequences:
-        if best_eval_iter > cur_iter-(eval_interval*2):
-            logging.warning(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
+        if best_eval_iter > cur_iter - (eval_interval * 2):
+            logging.warning(
+                f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
         else:
-            logging.info(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
+            logging.info(
+                f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
     else:
         logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
     # return samples
@@ -454,11 +480,14 @@ def handle_sigint(signum, frame, workers, work_server):
     raise SystemExit
 
 
-def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind):
-    logging.info("initiating eval parse")
+def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind, dev=False):
+    if dev:
+        logging.info("initiating dev parse")
+    else:
+        logging.info("initiating eval parse")
     eval_logprob = 0
     eval_log_e = 0
-    evalDistributer.submitSentenceJobs_eval(start_ind, end_ind)
+    evalDistributer.submitSentenceJobs_eval(start_ind, end_ind, dev=dev)
     parses = evalDistributer.get_parses()
     logprobs = []
     assert len(parses) == end_ind - start_ind
@@ -469,9 +498,14 @@ def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind):
             logprobs.append(parse.log_prob / np.log10(np.e))
         else:
             logging.error(f"Eval parser encountered an unparseable sequence")
-    logging.info(f"total eval logprob = {eval_logprob}")
-    logging.info(f"total eval logprob = {eval_log_e}")
+    if dev:
+        eval_ = 'dev'
+    else:
+        eval_ = 'eval'
+    logging.info(f"total {eval_} logprob = {eval_logprob}")
+    logging.info(f"total {eval_} logprob = {eval_log_e}")
     return eval_logprob, logprobs
+
 
 def save_eval_probs(probs, working_dir, best_probs=False):
     if best_probs:
@@ -480,7 +514,6 @@ def save_eval_probs(probs, working_dir, best_probs=False):
     else:
         with open(working_dir + "_eval_probs.pkl", 'wb+') as handle:
             pickle.dump(np.array(probs, dtype=np.float64), handle, protocol=pickle.HIGHEST_PROTOCOL)
-
 
 
 class EarlyStopper:
@@ -533,7 +566,7 @@ class EarlyStopper:
 
 
 def eval_pass_alt(working_dir, eval_sequences, cur_iter):
-    model_dir = os.path.join(working_dir, f'pcfg_model_{cur_iter-1}.pkl')
+    model_dir = os.path.join(working_dir, f'pcfg_model_{cur_iter - 1}.pkl')
     #in_file = open(model_dir, 'rb')
     model, _ = torch.load(model_dir, weights_only=False)
     #in_file.close()
@@ -549,7 +582,7 @@ def eval_pass_alt(working_dir, eval_sequences, cur_iter):
     cky.set_models(unbounded_model.sparse_grammar, unbounded_model.p0[0:K], unbounded_model.lexis)
     for sentence in eval_sequences:
         log_prob = cky.inside_sample_eval(
-           sentence)
+            sentence)
         eval_logprob += log_prob
         eval_log_e += log_prob / np.log10(np.e)
 
@@ -570,7 +603,7 @@ def eval_pass_alt_new(working_dir, eval_sequences, bounded_model, cur_iter):
     cky.set_models(bounded_model.sparse_grammar, bounded_model.p0, bounded_model.lexis)
     for sentence in eval_sequences:
         log_prob = cky.inside_sample_eval(
-           sentence)
+            sentence)
         eval_logprob += log_prob
         eval_log_e += log_prob / np.log10(np.e)
 
@@ -578,8 +611,9 @@ def eval_pass_alt_new(working_dir, eval_sequences, bounded_model, cur_iter):
     logging.info(f"total eval logprob = {eval_log_e}")
     return eval_logprob
 
+
 def eval_pass_alt_parallel(working_dir, eval_sequences, cur_iter):
-    model_dir = os.path.join(working_dir, f'pcfg_model_{cur_iter-1}.pkl')
+    model_dir = os.path.join(working_dir, f'pcfg_model_{cur_iter - 1}.pkl')
 
     model, _ = torch.load(model_dir, weights_only=False)
 
@@ -603,13 +637,15 @@ def eval_pass_alt_parallel(working_dir, eval_sequences, cur_iter):
     logging.info(f"total eval logprob = {eval_log_e}")
     return eval_logprob
 
+
 def cky_parallel_process(sequence_unbounded):
     sequence, unbounded_model = sequence_unbounded
     cky = CKY_sampler(K=unbounded_model.K, D=-1, max_len=len(sequence), gpu=False)
     cky.set_models(unbounded_model.sparse_grammar, unbounded_model.p0, unbounded_model.lexis)
     return cky.inside_sample_eval(sequence)
 
+
 def Sequence_Gen(sequence, unbounded_model):
     "little convenience function to deal with multiprocessing map"
     for i in sequence:
-        yield (i,unbounded_model)
+        yield (i, unbounded_model)
