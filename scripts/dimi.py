@@ -519,7 +519,7 @@ def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind, dev=Fa
     if dev:
         eval_ = 'dev'
     else:
-        eval_ = 'eval'
+        eval_ = 'test'
     logging.info(f"total {eval_} logprob = {eval_logprob}")
     logging.info(f"total {eval_} logprob = {eval_log_e}")
     return eval_logprob, logprobs
