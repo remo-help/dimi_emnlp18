@@ -262,9 +262,12 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     prev_anneal_coeff = -np.inf
     best_log_prob = -np.inf
     best_eval_prob = -np.inf
+    best_test_prob = -np.inf
     best_iter = 0
     best_eval_iter = 0
     eval_logprob = -np.inf
+    best_test_save_probs = []
+    test_logprob = -np.inf
     warming_period = False
     continue_bool = True
     last_model = False
@@ -366,8 +369,10 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             if cur_iter % eval_interval == 0 and cur_iter != 0:
                 tic = time.process_time()
                 if dev_sequences:
-                    eval_logprob, _ = eval_pass(workDistributer, dev_start_ind, dev_end_ind,
+                    eval_logprob, dev_save_logprobs = eval_pass(workDistributer, dev_start_ind, dev_end_ind,
                                                             dev=True)
+                    test_logprob, test_save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                                            dev=False)
                 else:
                     eval_logprob, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
                                                             dev=False)
@@ -383,10 +388,18 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                     if last_model:
                         if save_evals:
                             if dev_sequences:
-                                _, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
-                                                                        dev=False)
+                                #_, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                #                                        dev=False)
+                                # if we use dev_eval, we need to concatenate the logprobs of the dev and test sets at the final iter
+                                save_logprobs = dev_save_logprobs + test_save_logprobs
                             save_eval_probs(save_logprobs, working_dir)
                         pcfg_model.save(dnn=dnn_obs_model, last_model=last_model)
+                if dev_sequences:
+                    if best_test_prob < test_logprob:
+                        best_test_prob = test_logprob
+                        # we save the dev logprobs at the best test set logprobs
+                        # and we save the test logpbrobs at the best dev set logprobs
+                        best_test_save_probs = dev_save_logprobs
                 if best_eval_prob < eval_logprob:
                     logging.info(f"eval logprobs have improved by {eval_logprob - best_eval_prob}")
                     best_eval_prob = eval_logprob
@@ -397,8 +410,11 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                         if dev_sequences:
                             # if we use dev sequences, then we need to make sure we calculate the
                             # logprobs of the testing set instead
-                            _, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
-                                                                    dev=False)
+                            #_, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                            #                                       dev=False)
+                            # the best_test_save_probs are the probabilities of the dev set at the iter with the best
+                            # test set probs
+                            save_logprobs = best_test_save_probs + test_save_logprobs
                             logging.info(f" saving test logprobs {np.sum(save_logprobs)}")
                         save_eval_probs(save_logprobs, working_dir, best_probs=True)
                     #best_model = True
@@ -439,8 +455,10 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         if dev_sequences:
             # if we use dev sequences, then we need to make sure we calculate the
             # logprobs of the testing set instead
-            _, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
-                                         dev=False)
+            #_, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+             #                            dev=False)
+            save_logprobs = dev_save_logprobs + test_save_logprobs
+
         save_eval_probs(save_logprobs, working_dir, best_probs=False)
     logging.debug("Ending sampling")
     workDistributer.stop()
