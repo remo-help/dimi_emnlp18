@@ -137,7 +137,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     logging.info("Total number of tokens: {}, number of nodes: {}".format(sum(sent_lens),
                                                                           sum(sent_lens) * 2))
 
-    samples = []
+    iter_logprobs = []
     start_ind = 0
     end_ind = min(num_sents, batch_per_update)
     if eval_sequences:
@@ -373,9 +373,11 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                                                             dev=True)
                     test_logprob, test_save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
                                                             dev=False)
+                    iter_logprobs.append((eval_logprob,test_logprob))
                 else:
                     eval_logprob, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
                                                             dev=False)
+                    iter_logprobs.append((eval_logprob,))
                 toc = time.process_time()
                 logging.info(toc - tic)
                 #tic = time.process_time()
@@ -473,6 +475,9 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         inf_procs[cur_proc] = None
 
     logging.info("Sampling complete.")
+    with open(working_dir + f"_monitoring_probs.pkl", 'wb+') as handle:
+        pickle.dump(np.array(iter_logprobs, dtype=np.float32), handle, protocol=pickle.HIGHEST_PROTOCOL)
+    del iter_logprobs
     if eval_sequences:
         if best_eval_iter > cur_iter - (eval_interval * 2):
             logging.warning(
