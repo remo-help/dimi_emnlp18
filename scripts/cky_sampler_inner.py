@@ -34,9 +34,9 @@ class CKY_sampler:
             self._init_streams()
             self.cusparse = self.cusparse_p.Sparse()
             self.cublas = self.blas_p.Blas()
-            self.standard_scalar = cuda.device_array((1,), dtype=np.float32)
-            self.standard_biscalar = cuda.device_array((2,), dtype=np.float32)
-            self.U = cuda.device_array(((self.max_len - 1) * self.Q**2,), dtype=np.float32)
+            self.standard_scalar = cuda.device_array((1,), dtype=np.float64)
+            self.standard_biscalar = cuda.device_array((2,), dtype=np.float64)
+            self.U = cuda.device_array(((self.max_len - 1) * self.Q**2,), dtype=np.float64)
             self.random_generator = self.rand_p.PRNG(stream=self.streams[-1])
 
         self._init_chart()
@@ -63,19 +63,19 @@ class CKY_sampler:
 
     def _init_chart(self):
         # init the  temp arrays
-        self.standard_q_array = np.zeros((self.Q,), dtype=np.float32)
-        self.kron_vec_q2 = np.zeros((self.Q ** 2,), dtype=np.float32)
+        self.standard_q_array = np.zeros((self.Q,), dtype=np.float64)
+        self.kron_vec_q2 = np.zeros((self.Q ** 2,), dtype=np.float64)
         self.dot_vec_q2 = np.zeros_like(self.kron_vec_q2)
         num_chart_cells = compute_decr_sum(self.num_points)
         self.num_ele_in_chart = self.Q * num_chart_cells
-        self.incr_chart = np.zeros((self.Q, num_chart_cells), dtype=np.float32, order='F')
-        # self.incr_chart_1d = np.zeros((self.num_ele_in_chart,), dtype=np.float32, order='F')
+        self.incr_chart = np.zeros((self.Q, num_chart_cells), dtype=np.float64, order='F')
+        # self.incr_chart_1d = np.zeros((self.num_ele_in_chart,), dtype=np.float64, order='F')
 
         # self.decr_chart_1d = np.zeros_like(self.incr_chart_1d)
         self.decr_chart = np.zeros_like(self.incr_chart)
 
 
-        standard_q_zero_array = np.zeros((self.Q,), dtype=np.float32)
+        standard_q_zero_array = np.zeros((self.Q,), dtype=np.float64)
         if self.gpu:
             # send the temp arrays to GPU
             self.standard_q_array = cuda.to_device(self.standard_q_array)
