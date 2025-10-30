@@ -75,6 +75,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     num_sents = len(ev_seqs)
     num_tokens = np.sum(sent_lens)
 
+    total_runtime = 0
     num_samples = 0
     ## Set debug first so we can use it during config setting:
     debug = params.get('debug', 'INFO')
@@ -430,6 +431,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
 
         iter_toc = time.time()
         logging.info(f"Parsing is done! Finished iter {cur_iter} in {iter_toc - iter_tic} seconds")
+        total_runtime += (iter_toc - iter_tic)
         if not continue_bool:
             logging.warning(f"Early stopper has shutdown training at iter {cur_iter} as logodds have not been"
                             f" improving within tolerance."
@@ -478,6 +480,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     with open(working_dir + f"_monitoring_probs.pkl", 'wb+') as handle:
         pickle.dump(np.array(iter_logprobs, dtype=np.float32), handle, protocol=pickle.HIGHEST_PROTOCOL)
     del iter_logprobs
+    logging.info(f"Total runtime for this training pass was: {round((total_runtime/60),1)} Minutes")
     if eval_sequences:
         if best_eval_iter > cur_iter - (eval_interval * 2):
             logging.warning(
