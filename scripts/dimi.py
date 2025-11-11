@@ -12,7 +12,7 @@ import multiprocessing
 import numpy as np
 from .WorkDistributerServer import WorkDistributerServer
 from .bounded_pcfg_model import Bounded_PCFG_Model, UnBounded_PCFG_Model
-from .init_pcfg_strategies import *
+#from .init_pcfg_strategies import *
 from .pcfg_model import PCFG_model
 from .pcfg_translator import *
 from .workers import start_local_workers_with_distributer, start_cluster_workers
