@@ -47,18 +47,18 @@ def reduce_transitions(non_terminal_dict, rounding_acc=3, select_acc=0.001):
         # we round the probs so we dont end up with a huge number of potential transitions
         rounded_probs = np.round(probs_arr, rounding_acc)
         # we select only those probs that survive rounding
-        index_arr = np.where(rounded_probs > select_acc)
+        index_arr = np.where(probs_arr > select_acc)
         for index in index_arr[0]:
             #we grab the rounded probability and the actual label of the transition from our
             #lookup table and create a new transition dictionary
-            reduced_non_terminal[lookup_table[index]] = probs_arr[index]
+            reduced_non_terminal[lookup_table[index]] = rounded_probs[index]
         reduced_non_terms[non_terminal_node]=reduced_non_terminal
     return reduced_non_terms
 
 
 def create_start_state(reduced_non_terms, start_dist, rounding_acc=3, select_acc=0.001):
     rounded_start_dist = np.round(start_dist, rounding_acc)
-    index_arr = np.where(rounded_start_dist > select_acc)[0]
+    index_arr = np.where(start_dist > select_acc)[0]
     transitions = {}
     for state in index_arr:
         prob_weight = rounded_start_dist[state]
@@ -68,7 +68,8 @@ def create_start_state(reduced_non_terms, start_dist, rounding_acc=3, select_acc
                 transitions[transition] += transition_prob
             else:
                 transitions[transition] = transition_prob
-    return transitions
+
+    return {transition:np.round(transitions[transition], rounding_acc) for transition in transitions}
 
 def create_start_state_no_reduction(non_terms, start_dist):
     # creates a start state without reducing possible transitions, this is used when we expect
@@ -117,7 +118,7 @@ def translate_to_pcfg(reduced_non_terms, start_state, word_dict, start_state_lab
 def pcfg_from_path(path, reduce=False, rounding_acc=3, select_acc=0.001):
     pcfg, word_dict = load_model(path)
     if reduce:
-        print(f"reducing PCFG probabilities to a rounding accuracy of {rounding_acc}")
+        print(f"reducing PCFG probabilities to probs above {select_acc}")
         new_trans = reduce_transitions(pcfg[0], rounding_acc=rounding_acc, select_acc=select_acc)
         start_state = create_start_state(new_trans, pcfg[1], rounding_acc=rounding_acc, select_acc=select_acc)
     else:
