@@ -1,7 +1,7 @@
 import logging
 import os.path
 import gzip
-import nltk
+#import nltk
 import numpy as np
 import time
 from scipy.stats import dirichlet

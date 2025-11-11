@@ -1,4 +1,5 @@
-import nltk
+import nltk.grammar
+import nltk.tree
 import numpy as np
 import os
 from copy import deepcopy
