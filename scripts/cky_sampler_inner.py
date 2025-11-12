@@ -498,7 +498,22 @@ class CKY_sampler:
                     kth_node += 1
                     if not self.gpu:
                         p_bc = joint_k_B_C / total_likelihood_k
-                        bc = np.random.multinomial(1, p_bc.data)
+                        np.asarray(p_bc.data).astype('float64')
+                        #print(p_bc.data)
+                        #print(type(p_bc.data))
+                        #print(np.sum(p_bc.data))
+                        #bc = np.random.multinomial(1, p_bc.data)
+                        try:
+                            bc = np.random.multinomial(1, p_bc.data)
+                        except:
+                            # sometimes there are NaN values in the original array, throwing an error
+                            # this happens with very spread out dirstributions
+                            # so in that case we just use the joint distribution
+                            bc = np.random.multinomial(1, joint_k_B_C.data)
+
+
+                        #from scipy.special import softmax
+                        #bc = np.random.multinomial(1, softmax(p_bc.data, -1))
                         cat_bc = p_bc.col[np.nonzero(bc)[0][0]]
                     else:
                         # test_sp = scisparse.dok_matrix(joint_k_B_C.copy_to_host().reshape(1, -1))
