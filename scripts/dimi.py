@@ -1,15 +1,11 @@
 #!/usr/bin/env python3.4
 import time
-import copy
-import logging
-import os
 import pickle
 import signal
 import sys
-import copy
 import torch
 import multiprocessing
-import numpy as np
+#import numpy as np
 from .WorkDistributerServer import WorkDistributerServer
 from .bounded_pcfg_model import Bounded_PCFG_Model, UnBounded_PCFG_Model
 #from .init_pcfg_strategies import *
@@ -131,9 +127,10 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     seed = int(params.get('seed', -1))
     if seed > 0:
         logging.info("Using seed %d for random number generator." % (seed))
-        np.random.seed(seed)
+        rand = np.random.default_rng(seed=int(seed))
     else:
         logging.info("Using default seed for random number generator.")
+        rand = np.random.default_rng()
 
     logging.info("Total number of tokens: {}, number of nodes: {}".format(sum(sent_lens),
                                                                           sum(sent_lens) * 2))
@@ -180,7 +177,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     rnn_model_file = os.path.join(working_dir, 'rnn_model.pkl')
 
     pcfg_model = PCFG_model(K, D, vocab_size, num_sents, num_tokens, log_dir=working_dir,
-                            word_dict_file=word_dict_file)
+                            word_dict_file=word_dict_file, random_generator=rand)
     pcfg_model.set_alpha(alpha=init_alpha)
 
     if D != -1:
@@ -239,7 +236,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     if num_cpu_workers + num_gpu_workers > 0:
         inf_procs = start_local_workers_with_distributer(workDistributer, max_len, num_cpu_workers, num_gpu_workers,
                                                          gpu,
-                                                         batch_per_worker, K=K, D=D)
+                                                         batch_per_worker, K=K, D=D, random_gen=seed)
 
     elif cluster_cmd != None:
         start_cluster_workers(workDistributer, cluster_cmd, max_len, gpu, K=K, D=D, batch_size=batch_per_worker)
@@ -254,6 +251,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                    'batch_size': batch_per_worker, 'K': K, 'D': D}, file=c)
             print('OK', file=c)
 
+    time.sleep(0.5)
     signal.signal(signal.SIGINT, lambda x, y: handle_sigint(x, y, inf_procs, workDistributer))
 
     max_loglikelihood = -np.inf
@@ -327,23 +325,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         pcfg_model.right_branching_tendency = r_branches / (l_branches + r_branches)
         logging.info("iter {} has a right branching tendency score of {:.2f}".format(cur_iter,
                                                                                      pcfg_model.right_branching_tendency))
-        if params.get("print_trees", False):
-            linetrees_fn = 'iter_' + str(cur_iter) + '.linetrees'
-            full_fn = os.path.join(working_dir, linetrees_fn)
-            if print_out_first_n_sents != -1:
-                trees = hid_seqs[: print_out_first_n_sents]
-            else:
-                trees = hid_seqs
-            hid_seqs = [None] * len(ev_seqs)
-            if cur_iter % 100 == 0 and cur_iter != 0:
-                pprint_bool = True
-            else:
-                pprint_bool = False
-            p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
-                                                                           pcfg_model.word_dict,
-                                                                           full_fn, pprint_bool))
-            p.daemon = True
-            p.start()
 
         if not eval_sequences:
             if np.isinf(best_log_prob):
@@ -453,8 +434,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         #         pickle.dump(dnn_obs_model, rfn)
         #
         cur_iter += 1
-        if params.get("print_trees", False):
-            p.join()
     if save_evals and save_logprobs:
         if dev_sequences:
             # if we use dev sequences, then we need to make sure we calculate the
@@ -477,6 +456,28 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         inf_procs[cur_proc] = None
 
     logging.info("Sampling complete.")
+
+    if params.get("print_trees", False):
+        linetrees_fn = 'iter_' + str(cur_iter) + '.linetrees'
+        full_fn = os.path.join(working_dir, linetrees_fn)
+        if print_out_first_n_sents != -1:
+            trees = hid_seqs[: print_out_first_n_sents]
+        else:
+            trees = hid_seqs
+        #print(hid_seqs)
+        if cur_iter % 100 == 0 and cur_iter != 0:
+            pprint_bool = True
+        else:
+            pprint_bool = False
+        p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
+                                                                       pcfg_model.word_dict,
+                                                                       full_fn, pprint_bool))
+        p.daemon = True
+        p.start()
+        print("printing linetrees")
+        p.join()
+
+
     with open(working_dir + f"_monitoring_probs.pkl", 'wb+') as handle:
         pickle.dump(np.array(iter_logprobs, dtype=np.float32), handle, protocol=pickle.HIGHEST_PROTOCOL)
     del iter_logprobs

@@ -9,7 +9,7 @@ import zmq
 from queue import Queue
 from .PyzmqMessage import SentenceJob, CompileJob, PyzmqJob, SentenceRequest, RowRequest, get_file_signature, resource_current, ModelLocation
 from threading import Thread, Lock
-import sys
+#import sys
 
 class ResetSignal():
     def __init__(self):
@@ -33,6 +33,9 @@ class VerboseLock():
         self._lock.release()
 
 class Ventilator(Thread):
+    """
+    class that governs job distribution
+    """
     def __init__(self, host, sync_port, sent_list):
         Thread.__init__(self)
         self.host = host
@@ -63,6 +66,7 @@ class Ventilator(Thread):
                 current_resource_sig = sync
 
             logging.debug("Ventilator received model signature sync signal")
+            #print(f"Ventilator received sync:{current_resource_sig}")
             while not self.job_queue.empty():
                 job_request = self.socket.recv_pyobj()
                 worker_resource_sig = job_request.resource_sig
@@ -84,6 +88,7 @@ class Ventilator(Thread):
                     self.job_queue.task_done()
 
                 logging.log(logging.DEBUG-1, "Ventilator pushing job %d" % job.resource.index)
+                #print("Ventilator pushing job %d" % job.resource.index)
 
                 if job_request.request_size > 1:
                     self.socket.send_pyobj(jobs)
@@ -101,6 +106,9 @@ class Ventilator(Thread):
         self.job_queue.put(job)
 
 class Sink(Thread):
+    """
+    seems to be the consumer
+    """
     def __init__(self, host, sync_port, num_sents):
         Thread.__init__(self)
         self.host = host
@@ -139,7 +147,7 @@ class Sink(Thread):
 
             num_done = 0
             self.outputs = list()
-            logging.info("clearing ouptuts")
+            logging.info("clearing outputs")
             self.model_rows = dict()
 
             while num_done < self.batch_size:
@@ -298,13 +306,15 @@ class WorkDistributerServer():
                 self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.sent_list[i]) ) )
 
             self.sink.setBatchSize(end-start)
+            #print(self.sink.batch_size)
 
         self.sink.setProcessing(True)
 
         ## Wait a bit for sink to process signal and set processing to true for the first time
-        time.sleep(0.01)
+        time.sleep(0.5)
 
         self.startProcessing(model_sig)
+        #print('submitting sentence jobs')
         while self.sink.getProcessing():
             time.sleep(0.05)
 

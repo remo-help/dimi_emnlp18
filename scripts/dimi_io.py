@@ -2,9 +2,7 @@
 
 import logging
 import numpy as np
-import os.path
 import pickle
-import shutil
 import sys, linecache
 import gzip
 

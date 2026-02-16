@@ -153,6 +153,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
             pcfg_counts = {}
             p0_counts = {}
             if random_trees:
+                logging.info('Initializing random trees.')
                 hid_seqs = generate_random_trees(ev_seqs, K)
                 _, pcfg_counts, p0_counts = extract_counts_from_trees(hid_seqs, K)
             logging.info('PCFG translator NULL initialization.')
@@ -209,6 +210,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
     # exit()
 
 def generate_random_trees(ev_seqs, K):
+    print('random trees')
     trees = []
     for sent in ev_seqs:
         sent_len = len(sent)

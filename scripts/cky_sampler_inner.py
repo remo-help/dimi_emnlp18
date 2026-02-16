@@ -1,12 +1,10 @@
 import itertools
-from .cky_utils import *
-from scipy import sparse as scisparse
 from numba import cuda
 from .cky_utils import *
 from .treenode import Node, Rule, nodes_to_tree
 import logging
 class CKY_sampler:
-    def __init__(self, K=0, D=0, max_len=40, gpu=False):
+    def __init__(self, K=0, D=0, max_len=40, gpu=False, random_gen=None):
         assert D != 0 and K != 0, 'Sampler initialization error: K {}, D {}'.format(K, D)
         if gpu:
             _temp = __import__('pyculib', fromlist=['sparse', 'blas', 'rand'])
@@ -29,6 +27,10 @@ class CKY_sampler:
         self.this_sent_len = -1
         self.U = 0 # the random numbers used for sampling
         self.counter = 0
+        if random_gen:
+            self.random = np.random.default_rng(random_gen)
+        else:
+            self.random = np.random.default_rng()
         if self.gpu:
             self.num_streams = 10
             self._init_streams()
@@ -368,7 +370,7 @@ class CKY_sampler:
             norm_term = np.linalg.norm(p_topnode,1)
             logprob = np.log10(norm_term) - sent_len * np.log10(self.scaler)
             normed_p_topnode = p_topnode / norm_term
-            top_A = np.random.multinomial(1, normed_p_topnode)
+            top_A = self.random.multinomial(1, normed_p_topnode)
             A_cat = np.nonzero(top_A)[0][0]
         else:
             # print(tt.shape, self.p0.shape)
@@ -382,7 +384,7 @@ class CKY_sampler:
             logprob = np.log10(norm_term) - sent_len * np.log10(self.scaler)
             normed_a0_vec = a0_vec / norm_term
             # print(scisparse.dok_matrix(a0_vec.reshape(1, -1)))
-            top_A = np.random.multinomial(1, normed_a0_vec)
+            top_A = self.random.multinomial(1, normed_a0_vec)
             A_cat = np.nonzero(top_A)[0][0]
         if np.isnan(norm_term) or np.isinf(norm_term) or norm_term == 0:
             # for i in range(0, len(sent)+1):
@@ -438,7 +440,7 @@ class CKY_sampler:
 
             k_dart = 1
             while 1 - k_dart < 1e-3:
-                k_dart = np.random.random()
+                k_dart = self.random.random()
 
             if not self.gpu:
                 a_likelihood = self.chart[working_node.i, working_node.j][working_node.cat]
@@ -504,12 +506,12 @@ class CKY_sampler:
                         #print(np.sum(p_bc.data))
                         #bc = np.random.multinomial(1, p_bc.data)
                         try:
-                            bc = np.random.multinomial(1, p_bc.data)
+                            bc = self.random.multinomial(1, p_bc.data)
                         except:
                             # sometimes there are NaN values in the original array, throwing an error
                             # this happens with very spread out dirstributions
                             # so in that case we just use the joint distribution
-                            bc = np.random.multinomial(1, joint_k_B_C.data)
+                            bc = self.random.multinomial(1, joint_k_B_C.data)
 
 
                         #from scipy.special import softmax

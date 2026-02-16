@@ -1,10 +1,10 @@
 import logging
 import os.path
-import gzip
+#import gzip
 #import nltk
 import numpy as np
 import time
-from scipy.stats import dirichlet
+#from scipy.stats import dirichlet
 import collections
 from .cky_utils import compute_Q
 import pickle
@@ -18,7 +18,7 @@ def normalize_a_tensor(tensor):
 
 class PCFG_model:
     def __init__(self, K, D, len_vocab, num_sents, num_words, log_dir='.', iter=0,
-                 word_dict_file=None, autocorr_lags=(50,100)):
+                 word_dict_file=None, autocorr_lags=(50,100), random_generator=None):
         self.autocorr_lags = autocorr_lags
         self.prev_models = collections.deque([], max(self.autocorr_lags))
         self.iter_autocorrs = []
@@ -52,6 +52,10 @@ class PCFG_model:
         self.log_probs = 0
         self.annealed_counts = {}
         self.constraints = {}
+        if random_generator:
+            self.random = random_generator
+        else:
+            self.random = np.random.default_rng()
 
     def set_log_mode(self, mode):
         self.log_mode = mode  # decides whether append to log or restart log
@@ -170,8 +174,8 @@ class PCFG_model:
         self.p0 = np.zeros_like(self.p0_counts)
 
         self.anneal_counts = self.counts
-        self.unannealed_dists = {x: np.random.dirichlet(self.counts[x]) for x in self.counts}
-        self.p0[:self.K] = np.random.dirichlet(self.p0_counts[:self.K])
+        self.unannealed_dists = {x: self.random.dirichlet(self.counts[x]) for x in self.counts}
+        self.p0[:self.K] = self.random.dirichlet(self.p0_counts[:self.K])
         dists = self.unannealed_dists
         self.p0 = self.p0.astype(np.float32)
         # print(dists)

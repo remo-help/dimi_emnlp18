@@ -21,7 +21,7 @@ from collections import Counter, defaultdict
 class PyzmqWorker:
     def __init__(self, host, jobs_port, results_port, models_port, maxLen, K=0, D=0, out_freq=1000,
                  tid=0,
-                 gpu=False, batch_size=1, seed=0, level=logging.INFO):
+                 gpu=False, batch_size=1, seed=0, level=logging.INFO, random_gen=None):
         #Process.__init__(self)
         # logging.info("Thread created with id %s" % (threading.get_ident()))
         self.host = host
@@ -41,7 +41,9 @@ class PyzmqWorker:
         self.gpu = gpu
         self.batch_size = batch_size
         self.my_ip = get_local_ip()
+        self.random_gen = random_gen
         # logging.info('worker {} at init: D is {} and my K is {}'.format(self.tid, self.D, self.K))
+        #print(self.tid)
 
 
     def __reduce__(self):
@@ -56,6 +58,7 @@ class PyzmqWorker:
         # logging.info("Thread starting run() method with id=%s" % (threading.get_ident()))
         context = zmq.Context()
         models_socket = context.socket(zmq.REQ)
+        #print(f"running {self.tid}")
         url = "tcp://%s:%d" % (self.host, self.models_port)
         logging.debug("Connecting to models socket at url %s" % (url) )
         models_socket.connect(url)
@@ -69,7 +72,8 @@ class PyzmqWorker:
 
         logging.debug("Worker %d connected to all three endpoints" % self.tid)
         # logging.info('starting sampler: my D is {} and my K is {}'.format(self.D, self.K))
-        self.cky_sampler = CKY_sampler(K=self.K, D=self.D, max_len=self.max_len, gpu=self.gpu)
+        self.cky_sampler = CKY_sampler(K=self.K, D=self.D, max_len=self.max_len, gpu=self.gpu, random_gen=self.random_gen)
+        #time.sleep(0.5)
         while True:
             if self.quit:
                 break
@@ -157,6 +161,7 @@ class PyzmqWorker:
                     break
 
             logging.log(logging.DEBUG-1, "Worker %d has received sentence %d" % (self.tid, sent_index))
+            #print("Worker %d has received sentence %d" % (self.tid, sent_index))
 
             t0 = time.time()
 
@@ -223,6 +228,7 @@ class PyzmqWorker:
 
                 # Send results back one-by-one
                 for ind, sent_sample in enumerate(sent_samples):
+                    #print(sent_index + ind)
                     if ind != len(sent_samples) -1 :
                         parse = PyzmqParse(sent_index + ind, sent_sample, log_probs[ind], success)
                     else:

@@ -1,6 +1,5 @@
 import sys
 
-import itertools
 
 if sys.version_info[0] != 3:
     print("This script requires Python 3")
@@ -10,9 +9,8 @@ import dimi_emnlp18.scripts.dimi_io as io
 import configparser
 import dimi_emnlp18.scripts.dimi as dimi
 import os
-from random import randint, random
-import time
-import multiprocessing
+import random as random_base
+
 
 
 def main(argv, name="example"):
@@ -29,6 +27,8 @@ def main(argv, name="example"):
 
     config = configparser.ConfigParser()
     input_seqs_file = None
+
+    #random_base.seed(int(config.get('pcfg', 'seed', fallback=69)))
 
     #time.sleep(random() * 10)
     if os.path.isdir(path + "config.ini"):
@@ -86,15 +86,7 @@ def main(argv, name="example"):
     params['output_dir'] = out_dir
 
     ## Store tag sequences of gold tagged sentences
-    gold_seq = dict()
-    if 'num_gold_sents' in params and params['num_gold_sents'] == 'all':
-        for i in range(0, len(pos_seq)):
-            gold_seq[i] = pos_seq[i]
-    else:
-        while len(gold_seq) < int(params.get('num_gold_sents', 0)) and len(gold_seq) < len(word_seq):
-            rand = randint(0, len(word_seq) - 1)
-            if rand not in gold_seq.keys():
-                gold_seq[rand] = pos_seq[rand]
+    gold_seq = None
 
     word_vecs = None
     if 'word_vecs_file' in params:

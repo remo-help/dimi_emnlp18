@@ -30,6 +30,7 @@ def get_lex(pcfg_model, D, lex_scale=20):
 
 # for testing only:
 def compile_nonterms(gammas, K, D):
+    print("compiling nonterms")
     # side -> D -> K
     Q = compute_Q(K, D)
     nonterms = np.zeros((K * 2 * (D+1), K * 2 * (D+1), K * 2 * (D+1)))
@@ -69,7 +70,7 @@ def compile_nonterms(gammas, K, D):
                             rhs_1_mat = 0 * (K * (D+1))+ (depth * K) + rhs_1
                             rhs_2_mat = 1 * (K * (D+1))+ (d * K) + rhs_2
                             # print(lhs, rhs, val,  lhs_mat, rhs_1_mat, rhs_2_mat, side, d)
-                            # print(lhs, rhs, lhs, lhs_mat, rhs_1_mat, rhs_2_mat, side, d, val)
+                            print(lhs, rhs, lhs, lhs_mat, rhs_1_mat, rhs_2_mat, side, d, val)
                             val = np.random.random()
                             nonterms[lhs_mat, rhs_1_mat, rhs_2_mat] = val
                             nonterms_dict[(side, d, lhs_sym), (0, depth, rhs_1), (1, d, rhs_2)] = val
