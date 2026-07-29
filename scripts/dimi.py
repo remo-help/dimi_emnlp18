@@ -20,7 +20,7 @@ from .cky_sampler_inner import CKY_sampler
 
 
 # Has a state for every word in the corpus
-# What's the state of the system at one Gibbs sampling iteration?
+# What's the state of the system at one s sampling iteration?
 class Sample:
     def __init__(self):
         self.hid_seqs = []
