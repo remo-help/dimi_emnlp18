@@ -467,6 +467,9 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         #print(hid_seqs)
         if cur_iter % 100 == 0 and cur_iter != 0:
             pprint_bool = True
+        elif cur_iter == iters:
+            logging.info("printing pretty trees")
+            pprint_bool = True
         else:
             pprint_bool = False
         p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
