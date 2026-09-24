@@ -9,7 +9,7 @@ import zmq
 from queue import Queue
 from .PyzmqMessage import SentenceJob, CompileJob, PyzmqJob, SentenceRequest, RowRequest, get_file_signature, resource_current, ModelLocation
 from threading import Thread, Lock
-import sys
+#import sys
 
 class ResetSignal():
     def __init__(self):
@@ -33,6 +33,9 @@ class VerboseLock():
         self._lock.release()
 
 class Ventilator(Thread):
+    """
+    class that governs job distribution
+    """
     def __init__(self, host, sync_port, sent_list):
         Thread.__init__(self)
         self.host = host
@@ -63,6 +66,7 @@ class Ventilator(Thread):
                 current_resource_sig = sync
 
             logging.debug("Ventilator received model signature sync signal")
+            #print(f"Ventilator received sync:{current_resource_sig}")
             while not self.job_queue.empty():
                 job_request = self.socket.recv_pyobj()
                 worker_resource_sig = job_request.resource_sig
@@ -84,6 +88,7 @@ class Ventilator(Thread):
                     self.job_queue.task_done()
 
                 logging.log(logging.DEBUG-1, "Ventilator pushing job %d" % job.resource.index)
+                #print("Ventilator pushing job %d" % job.resource.index)
 
                 if job_request.request_size > 1:
                     self.socket.send_pyobj(jobs)
@@ -101,6 +106,9 @@ class Ventilator(Thread):
         self.job_queue.put(job)
 
 class Sink(Thread):
+    """
+    seems to be the consumer
+    """
     def __init__(self, host, sync_port, num_sents):
         Thread.__init__(self)
         self.host = host
@@ -139,6 +147,7 @@ class Sink(Thread):
 
             num_done = 0
             self.outputs = list()
+            logging.info("clearing outputs")
             self.model_rows = dict()
 
             while num_done < self.batch_size:
@@ -248,11 +257,13 @@ class ModelDistributer(Thread):
 
 class WorkDistributerServer():
 
-    def __init__(self, sent_list, working_dir):
+    def __init__(self, sent_list, working_dir, eval_list=None, dev_list=None):
 
         ## Set up job distribution servers:
         self.host = get_local_ip()
         self.sent_list = sent_list
+        self.eval_list = eval_list
+        self.dev_list = dev_list
 
         context = zmq.Context()
 
@@ -295,6 +306,41 @@ class WorkDistributerServer():
                 self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.sent_list[i]) ) )
 
             self.sink.setBatchSize(end-start)
+            #print(self.sink.batch_size)
+
+        self.sink.setProcessing(True)
+
+        ## Wait a bit for sink to process signal and set processing to true for the first time
+        time.sleep(0.5)
+
+        self.startProcessing(model_sig)
+        #print('submitting sentence jobs')
+        while self.sink.getProcessing():
+            time.sleep(0.05)
+
+    def submitSentenceJobs_eval(self, start=-1, end=-1, sent_index_list=None, dev=False):
+        ind = 0
+        num_done = 0
+        self.model_server.reset_models()
+        model_sig = self.model_server.model_sig
+        # print(start, end, 'submit')
+        if sent_index_list is not None:
+            for i, sent in enumerate(sent_index_list):
+                if dev:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.dev_list[sent])
+                                          ) )
+                else:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.eval_list[sent])
+                                              ))
+            self.sink.setBatchSize(len(sent_index_list))
+        elif start >= 0 and end >= 0:
+            for i in range(start, end):
+                if dev:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.dev_list[i]) ) )
+                else:
+                    self.vent.addJob(PyzmqJob(PyzmqJob.SENTENCE, SentenceJob(i, self.eval_list[i])))
+
+            self.sink.setBatchSize(end-start)
 
         self.sink.setProcessing(True)
 
@@ -304,7 +350,6 @@ class WorkDistributerServer():
         self.startProcessing(model_sig)
         while self.sink.getProcessing():
             time.sleep(0.05)
-
     def submitBuildModelJobs(self, num_rows, full_pi=False):
         self.model_server.reset_models('raw_models.bin')
         for i in range(0, num_rows):

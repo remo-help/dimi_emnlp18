@@ -1,12 +1,10 @@
 import itertools
-from .cky_utils import *
-from scipy import sparse as scisparse
 from numba import cuda
 from .cky_utils import *
 from .treenode import Node, Rule, nodes_to_tree
 import logging
 class CKY_sampler:
-    def __init__(self, K=0, D=0, max_len=40, gpu=False):
+    def __init__(self, K=0, D=0, max_len=40, gpu=False, random_gen=None):
         assert D != 0 and K != 0, 'Sampler initialization error: K {}, D {}'.format(K, D)
         if gpu:
             _temp = __import__('pyculib', fromlist=['sparse', 'blas', 'rand'])
@@ -29,14 +27,18 @@ class CKY_sampler:
         self.this_sent_len = -1
         self.U = 0 # the random numbers used for sampling
         self.counter = 0
+        if random_gen:
+            self.random = np.random.default_rng(random_gen)
+        else:
+            self.random = np.random.default_rng()
         if self.gpu:
             self.num_streams = 10
             self._init_streams()
             self.cusparse = self.cusparse_p.Sparse()
             self.cublas = self.blas_p.Blas()
-            self.standard_scalar = cuda.device_array((1,), dtype=np.float32)
-            self.standard_biscalar = cuda.device_array((2,), dtype=np.float32)
-            self.U = cuda.device_array(((self.max_len - 1) * self.Q**2,), dtype=np.float32)
+            self.standard_scalar = cuda.device_array((1,), dtype=np.float64)
+            self.standard_biscalar = cuda.device_array((2,), dtype=np.float64)
+            self.U = cuda.device_array(((self.max_len - 1) * self.Q**2,), dtype=np.float64)
             self.random_generator = self.rand_p.PRNG(stream=self.streams[-1])
 
         self._init_chart()
@@ -63,19 +65,19 @@ class CKY_sampler:
 
     def _init_chart(self):
         # init the  temp arrays
-        self.standard_q_array = np.zeros((self.Q,), dtype=np.float32)
-        self.kron_vec_q2 = np.zeros((self.Q ** 2,), dtype=np.float32)
+        self.standard_q_array = np.zeros((self.Q,), dtype=np.float64)
+        self.kron_vec_q2 = np.zeros((self.Q ** 2,), dtype=np.float64)
         self.dot_vec_q2 = np.zeros_like(self.kron_vec_q2)
         num_chart_cells = compute_decr_sum(self.num_points)
         self.num_ele_in_chart = self.Q * num_chart_cells
-        self.incr_chart = np.zeros((self.Q, num_chart_cells), dtype=np.float32, order='F')
-        # self.incr_chart_1d = np.zeros((self.num_ele_in_chart,), dtype=np.float32, order='F')
+        self.incr_chart = np.zeros((self.Q, num_chart_cells), dtype=np.float64, order='F')
+        # self.incr_chart_1d = np.zeros((self.num_ele_in_chart,), dtype=np.float64, order='F')
 
         # self.decr_chart_1d = np.zeros_like(self.incr_chart_1d)
         self.decr_chart = np.zeros_like(self.incr_chart)
 
 
-        standard_q_zero_array = np.zeros((self.Q,), dtype=np.float32)
+        standard_q_zero_array = np.zeros((self.Q,), dtype=np.float64)
         if self.gpu:
             # send the temp arrays to GPU
             self.standard_q_array = cuda.to_device(self.standard_q_array)
@@ -130,6 +132,45 @@ class CKY_sampler:
 
             self.stream_generator = self._stream_gen()
 
+    def inside_sample_eval(self, sent):
+        success = 0
+        tries = 0
+        while not success:
+            if tries > 10:
+                raise Exception('overflowing/underflowing problem unsolvable!')
+            tries += 1
+            try:
+                if self.gpu:
+                    self.cublas.scal(0., self.decr_chart_flat)
+                self.compute_inside(sent)
+                logprob = self.sample_inside_probs(sent)
+                success = True
+            except OverflowException as oe:
+                rescaler = 1e-1
+                logging.warning("overflow detected. curent scaler is {}, rescaler is {}. "
+                                "number of tries {}".format(
+                    self.scaler, rescaler, tries))
+                self._init_chart() # flush the temp vectors and chart vectors
+                self._scale_lexis(self.lexis, rescaler)
+                logging.warning(oe)
+            except UnderflowException as ue:
+                rescaler = 1e1
+                logging.warning("underflow detected. curent scaler is {}, rescaler is {}. "
+                                "number of tries {}".format(
+                    self.scaler, rescaler, tries))
+                self._init_chart()  # flush the temp vectors and chart vectors
+                self._scale_lexis(self.lexis, rescaler)
+                logging.warning(ue)
+            except:
+                raise
+        self.this_sent_len = -1
+        assert logprob < 0, 'weird logprob {}!'.format(logprob)
+        # this_tree, production_counter_dict, lr_branches = nodes_to_tree(nodes, sent)
+        # print(this_tree)
+        # print(self.counter)
+        self.counter += 1
+        #return this_tree, logprob, production_counter_dict, lr_branches
+        return logprob
 
     def inside_sample(self, sent):
         # print(sent)
@@ -241,7 +282,16 @@ class CKY_sampler:
                 # logging.info(self.chart[i, i+1].shape)
                 # logging.info(self.lexis[w].shape)
                 # logging.info("{}, {}, {}, {}".format(self.Q, self.K, self.D, self.max_len))
-                np.copyto(self.chart[i, i+1], self.lexis[w])
+                try:
+                    np.copyto(self.chart[i, i+1], self.lexis[w])
+                except:
+                    print(w)
+                    print(self.lexis[w])
+                    print(i)
+                    print(self.chart.shape)
+                    print(sent)
+                    print(self.chart[i, i+1])
+                    exit()
 
         if self.gpu:
             nnz = self.G.nnz
@@ -320,7 +370,7 @@ class CKY_sampler:
             norm_term = np.linalg.norm(p_topnode,1)
             logprob = np.log10(norm_term) - sent_len * np.log10(self.scaler)
             normed_p_topnode = p_topnode / norm_term
-            top_A = np.random.multinomial(1, normed_p_topnode)
+            top_A = self.random.multinomial(1, normed_p_topnode)
             A_cat = np.nonzero(top_A)[0][0]
         else:
             # print(tt.shape, self.p0.shape)
@@ -334,7 +384,7 @@ class CKY_sampler:
             logprob = np.log10(norm_term) - sent_len * np.log10(self.scaler)
             normed_a0_vec = a0_vec / norm_term
             # print(scisparse.dok_matrix(a0_vec.reshape(1, -1)))
-            top_A = np.random.multinomial(1, normed_a0_vec)
+            top_A = self.random.multinomial(1, normed_a0_vec)
             A_cat = np.nonzero(top_A)[0][0]
         if np.isnan(norm_term) or np.isinf(norm_term) or norm_term == 0:
             # for i in range(0, len(sent)+1):
@@ -390,7 +440,7 @@ class CKY_sampler:
 
             k_dart = 1
             while 1 - k_dart < 1e-3:
-                k_dart = np.random.random()
+                k_dart = self.random.random()
 
             if not self.gpu:
                 a_likelihood = self.chart[working_node.i, working_node.j][working_node.cat]
@@ -450,7 +500,22 @@ class CKY_sampler:
                     kth_node += 1
                     if not self.gpu:
                         p_bc = joint_k_B_C / total_likelihood_k
-                        bc = np.random.multinomial(1, p_bc.data)
+                        np.asarray(p_bc.data).astype('float64')
+                        #print(p_bc.data)
+                        #print(type(p_bc.data))
+                        #print(np.sum(p_bc.data))
+                        #bc = np.random.multinomial(1, p_bc.data)
+                        try:
+                            bc = self.random.multinomial(1, p_bc.data)
+                        except:
+                            # sometimes there are NaN values in the original array, throwing an error
+                            # this happens with very spread out dirstributions
+                            # so in that case we just use the joint distribution
+                            bc = self.random.multinomial(1, joint_k_B_C.data)
+
+
+                        #from scipy.special import softmax
+                        #bc = np.random.multinomial(1, softmax(p_bc.data, -1))
                         cat_bc = p_bc.col[np.nonzero(bc)[0][0]]
                     else:
                         # test_sp = scisparse.dok_matrix(joint_k_B_C.copy_to_host().reshape(1, -1))
@@ -492,7 +557,6 @@ class CKY_sampler:
                 print('Dart is {}, k marginal {}; a likelihood {}'.format(k_dart, k_marginal, a_likelihood))
                 print(likelihoods)
                 raise UnderflowException
-
         return expanded_nodes, logprob #, rules
 
     @staticmethod
@@ -524,6 +588,27 @@ class CKY_sampler:
                 self.cublas.scal(rescaler, self.lexis_flat)
             else:
                 self.lexis *= rescaler
+
+    def sample_inside_probs(self, sent):
+        # this is used to just get sequence probabilities
+        expanding_nodes = []
+        expanded_nodes = []
+        # rules = []
+        assert self.this_sent_len > 0, "must call inside pass first!"
+        sent_len = self.this_sent_len
+        topnode_pdf = self.chart[0, self.this_sent_len]
+        # draw the top node
+        if not self.gpu:
+            p_topnode = (topnode_pdf * self.p0).astype(np.float64)
+            probs = np.log10(np.sum(p_topnode))
+            scaler = - sent_len * np.log10(self.scaler)
+            sequence_logprob = probs + scaler
+        else:
+            p_topnode = (topnode_pdf * self.p0).astype(np.float64)
+            probs = np.log10(np.sum(p_topnode))
+            scaler = - sent_len * np.log10(self.scaler)
+            sequence_logprob = probs + scaler
+        return sequence_logprob
 
 class OverflowException(Exception):
     def __init__(self, *args):

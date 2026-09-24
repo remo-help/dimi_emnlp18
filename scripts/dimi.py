@@ -1,33 +1,36 @@
 #!/usr/bin/env python3.4
-
-import copy
-import logging
-import os
+import time
 import pickle
 import signal
 import sys
-import copy
 import torch
 import multiprocessing
-import numpy as np
+#import numpy as np
 from .WorkDistributerServer import WorkDistributerServer
 from .bounded_pcfg_model import Bounded_PCFG_Model, UnBounded_PCFG_Model
-from .init_pcfg_strategies import *
+#from .init_pcfg_strategies import *
 from .pcfg_model import PCFG_model
 from .pcfg_translator import *
 from .workers import start_local_workers_with_distributer, start_cluster_workers
 from .dimi_io import write_linetrees_file, read_gold_pcfg_file
 from collections import Counter, defaultdict
+
+# trying something
+from .cky_sampler_inner import CKY_sampler
+
+
 # Has a state for every word in the corpus
-# What's the state of the system at one Gibbs sampling iteration?
+# What's the state of the system at one s sampling iteration?
 class Sample:
     def __init__(self):
         self.hid_seqs = []
         self.models = None
         self.log_prob = 0
 
+
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1") if type(v) is not bool else v
+
 
 def wrapped_sample_beam(*args, **kwargs):
     try:
@@ -38,17 +41,23 @@ def wrapped_sample_beam(*args, **kwargs):
         raise e
         exit(0)
 
+
 # This is the main entry point for this module.
 # Arg 1: ev_seqs : a list of lists of integers, representing
 # the EVidence SEQuenceS seen by the user (e.g., words in a sentence
 # mapped to ints).
 def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
-                word_dict_file=None, word_vecs=None, resume=False, eval_sequences=None):
+                word_dict_file=None, word_vecs=None, resume=False, eval_sequences=None,
+                dev_sequences=None):
     global K
     K = int(params.get('k'))
     sent_lens = list(map(len, ev_seqs))
 
     max_len = max(map(len, ev_seqs))
+
+    if params.get('max_len', 'None') != 'None':
+        if max_len < int(params.get('max_len')):
+            max_len = int(params.get('max_len'))
     # vocab_size = max(map(max, ev_seqs)) # vocab_size, which is the max index of the word indices
 
     f = open(word_dict_file, 'r', encoding='utf-8')
@@ -62,6 +71,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     num_sents = len(ev_seqs)
     num_tokens = np.sum(sent_lens)
 
+    total_runtime = 0
     num_samples = 0
     ## Set debug first so we can use it during config setting:
     debug = params.get('debug', 'INFO')
@@ -70,16 +80,16 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     filehandler = logging.FileHandler(os.path.join(working_dir, 'log.txt'))
     streamhandler = logging.StreamHandler(sys.stdout)
     handler_list = [filehandler, streamhandler]
-    logging.basicConfig(level=getattr(logging, debug), format='%(asctime)s %(message)s',
-                        datefmt='%m/%d/%Y %I:%M:%S %p', handlers=handler_list)
+    #logging.basicConfig(level=getattr(logging, debug), format='%(asctime)s %(message)s',
+    #                    datefmt='%m/%d/%Y %I:%M:%S %p', handlers=handler_list)
     logging.getLogger("numba.cuda.cudadrv.driver").setLevel(logging.WARNING)
-
+    global D
     D = int(params.get('d', 1))
     iters = int(params.get('iters'))
     try:
         num_cpu_workers = int(params.get('cpu_workers', 0))
     except ValueError as err:
-        if params.get('cpu_workers', 0)=='auto':
+        if params.get('cpu_workers', 0) == 'auto':
             # import multiprocessing
             num_cpu_workers = multiprocessing.cpu_count()
         else:
@@ -92,7 +102,7 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
     gpu = bool(int(params.get('gpu', 0)))
     if gpu and num_gpu_workers < 1 and num_cpu_workers > 0:
         logging.warning("Inconsistent config: gpu flag set with %d gpu workers; setting gpu=False"
-                      % (num_gpu_workers))
+                        % (num_gpu_workers))
         gpu = False
 
     resume_iter = int(params.get("resume_iter", -1))
@@ -111,47 +121,63 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                 line = line.strip().split(' = ')
                 gold_pos_dict[int(line[0])] = int(line[1])
 
-
     if (gold_seqs != None and 'num_gold_sents' in params):
         logging.info('Using gold tags for %s sentences.' % str(params['num_gold_sents']))
 
     seed = int(params.get('seed', -1))
     if seed > 0:
         logging.info("Using seed %d for random number generator." % (seed))
-        np.random.seed(seed)
+        rand = np.random.default_rng(seed=int(seed))
     else:
         logging.info("Using default seed for random number generator.")
+        rand = np.random.default_rng()
 
     logging.info("Total number of tokens: {}, number of nodes: {}".format(sum(sent_lens),
-                                                                          sum(sent_lens)*2))
+                                                                          sum(sent_lens) * 2))
 
-    samples = []
+    iter_logprobs = []
     start_ind = 0
     end_ind = min(num_sents, batch_per_update)
     if eval_sequences:
         eval_start_ind = 0
-        eval_end_ind = min(len(eval_sequences), batch_per_update)
+        eval_end_ind = len(eval_sequences)
         eval_interval = int(params.get('eval_interval', 5))
-        evalDistributer = WorkDistributerServer(eval_sequences, working_dir)
         logging.info(f"Using eval sequences of length: {len(eval_sequences)}")
-        logging.info(f"eval: {eval_sequences[0:2]}")
-        logging.info(f"train: {ev_seqs[0:2]}")
-        if str2bool(params.get('early_stopping', True)):
-            early_stopper = EarlyStopper()
+        eval_logprob = -np.inf
+        if str2bool(params.get('save_evals', True)):
+            save_evals = True
+            save_logprobs = None
+        if dev_sequences:
+            dev_start_ind = 0
+            dev_end_ind = len(dev_sequences)
+            logging.info(f"Using dev sequences of length: {len(dev_sequences)}")
         else:
-            early_stopper = False
+            dev_start_ind = None
+            dev_end_ind = None
+
     else:
         eval_start_ind = None
         eval_end_ind = None
         eval_interval = None
         evalDistributer = None
+        dev_start_ind = None
+        dev_end_ind = None
         logging.info(f"eval sequs not enabled")
+
+    if str2bool(params.get('early_stopping', True)):
+        tolerance = int(params.get('tolerance', 5))
+        best_tolerance = int(params.get('best_tolerance', 10))
+        early_stopper = EarlyStopper(tolerance=tolerance, best_tolerance=best_tolerance)
+        logging.info(f"Early stopping enabled. Tolerances are: {early_stopper.tolerance} "
+                     f"and {early_stopper.best_tolerance}")
+    else:
+        early_stopper = False
     logging.info("Initializing state: K is {}; D is {}; MaxLen is {}".format(K, D, max_len))
 
     rnn_model_file = os.path.join(working_dir, 'rnn_model.pkl')
 
     pcfg_model = PCFG_model(K, D, vocab_size, num_sents, num_tokens, log_dir=working_dir,
-                            word_dict_file=word_dict_file)
+                            word_dict_file=word_dict_file, random_generator=rand)
     pcfg_model.set_alpha(alpha=init_alpha)
 
     if D != -1:
@@ -181,11 +207,11 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             else:
                 pcfg_runtime_stats = open(os.path.join(working_dir, 'pcfg_hypparams.txt'))
                 num_iter = int(pcfg_runtime_stats.readlines()[-1].split('\t')[0])
-            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_'+str(
-                num_iter)+'.pkl'), 'rb'))
+            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_' + str(
+                num_iter) + '.pkl'), 'rb'))
         except:
-            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_'+str(
-                num_iter-1)+'.pkl'), 'rb'))
+            pcfg_model, dnn_obs_model = torch.load(open(os.path.join(working_dir, 'pcfg_model_' + str(
+                num_iter - 1) + '.pkl'), 'rb'))
 
         dnn_obs_model = None
         logging.info("Conitinuing from iteration {}".format(num_iter))
@@ -197,60 +223,60 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         hid_seqs = [None] * num_sents
 
         cur_iter = pcfg_model.iter
-    workDistributer = WorkDistributerServer(ev_seqs, working_dir)
+    workDistributer = WorkDistributerServer(ev_seqs, working_dir, eval_sequences, dev_list=dev_sequences)
     logging.info("GPU is %s with %d workers and batch size %d" % (gpu, num_gpu_workers, batch_per_worker))
     logging.info("Start a new worker with python3 scripts/workers.py %s %d %d %d %d %d %d" % (
-    workDistributer.host, workDistributer.jobs_port, workDistributer.results_port, workDistributer.models_port,
-    max_len + 1, int(gpu), batch_per_worker))
-
+        workDistributer.host, workDistributer.jobs_port, workDistributer.results_port, workDistributer.models_port,
+        max_len + 1, int(gpu), batch_per_worker))
 
     ## Initialize all the sub-processes with their input-output queues
     ## and dimensions of matrix they'll need
     logging.info("Starting workers")
 
     if num_cpu_workers + num_gpu_workers > 0:
-        inf_procs = start_local_workers_with_distributer(workDistributer, max_len, num_cpu_workers, num_gpu_workers, gpu,
-                                                         batch_per_worker, K=K, D=D)
-        if eval_sequences:
-            eval_inf_procs = start_local_workers_with_distributer(evalDistributer, max_len, num_cpu_workers, num_gpu_workers,
-                                                             gpu,
-                                                             batch_per_worker, K=K, D=D)
+        inf_procs = start_local_workers_with_distributer(workDistributer, max_len, num_cpu_workers, num_gpu_workers,
+                                                         gpu,
+                                                         batch_per_worker, K=K, D=D, random_gen=seed)
 
     elif cluster_cmd != None:
         start_cluster_workers(workDistributer, cluster_cmd, max_len, gpu, K=K, D=D, batch_size=batch_per_worker)
     else:
         master_config_file = os.path.join(working_dir, 'masterConfig.txt')
         with open(master_config_file, 'w') as c:
-            print({'host':workDistributer.host, 'jobs_port':workDistributer.jobs_port,
-                   'results_port':workDistributer.results_port,
-                    'models_port':workDistributer.models_port,
-                   'max_len':max_len + 1,
-                   'gpu':int(gpu),
-                    'batch_size':batch_per_worker, 'K':K, 'D':D}, file=c)
+            print({'host': workDistributer.host, 'jobs_port': workDistributer.jobs_port,
+                   'results_port': workDistributer.results_port,
+                   'models_port': workDistributer.models_port,
+                   'max_len': max_len + 1,
+                   'gpu': int(gpu),
+                   'batch_size': batch_per_worker, 'K': K, 'D': D}, file=c)
             print('OK', file=c)
 
+    time.sleep(0.5)
     signal.signal(signal.SIGINT, lambda x, y: handle_sigint(x, y, inf_procs, workDistributer))
-    if eval_sequences:
-        signal.signal(signal.SIGINT, lambda x, y: handle_sigint(x, y, eval_inf_procs, evalDistributer))
 
     max_loglikelihood = -np.inf
     best_init_model = None
     best_anneal_model = None
     best_anneal_likelihood = -np.inf
     prev_anneal_coeff = -np.inf
-    total_logprob = 0
     best_log_prob = -np.inf
     best_eval_prob = -np.inf
+    best_test_prob = -np.inf
     best_iter = 0
     best_eval_iter = 0
+    eval_logprob = -np.inf
+    best_test_save_probs = []
+    test_logprob = -np.inf
     warming_period = False
     continue_bool = True
+    last_model = False
+    best_model = False
     ### Start doing actual sampling:
     while cur_iter < iters and continue_bool:
         sent_list = []
         pcfg_model.iter = cur_iter
         logging.info('Parsing started Now. Sink loading the sentences.')
-
+        iter_tic = time.time()
         if not sent_list:
             workDistributer.submitSentenceJobs(start_ind, end_ind)
         else:
@@ -259,7 +285,6 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         num_processed = 0
         parses = workDistributer.get_parses()
         # print(len(parses))
-        logging.info("Parsing is done!")
 
         assert len(parses) == end_ind - start_ind or len(parses) == len(sent_list), 'wrong number of parses received!'
 
@@ -294,45 +319,14 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
                     logging.error('The index is %d' % parse.index)
                     raise
                 total_logprobs += parse.log_prob
+            # TODO: Check if the state list is related to suspected memory leak
             hid_seqs[parse.index] = parse.state_list
         pcfg_model.log_probs = total_logprobs
         pcfg_model.right_branching_tendency = r_branches / (l_branches + r_branches)
         logging.info("iter {} has a right branching tendency score of {:.2f}".format(cur_iter,
-                                                                                 pcfg_model.right_branching_tendency))
-        if params.get("print_trees", False):
-            linetrees_fn = 'iter_' + str(cur_iter) + '.linetrees'
-            full_fn = os.path.join(working_dir, linetrees_fn)
-            if print_out_first_n_sents != -1:
-                trees = hid_seqs[: print_out_first_n_sents]
-            else:
-                trees = hid_seqs
-            hid_seqs = [None] * len(ev_seqs)
-            if cur_iter % 100 == 0 and cur_iter != 0:
-                pprint_bool = True
-            else:
-                pprint_bool = False
-            p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
-                                                                       pcfg_model.word_dict,
-                                                                       full_fn, pprint_bool))
-            p.daemon = True
-            p.start()
+                                                                                     pcfg_model.right_branching_tendency))
 
-        if eval_sequences:
-            eval_logprob = -np.inf
-            if cur_iter % eval_interval == 0 and cur_iter !=0:
-                eval_logprob = eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
-
-            if np.isinf(best_log_prob):
-                best_log_prob = total_logprobs
-                best_model = True
-            elif best_eval_prob < eval_logprob:
-                best_eval_prob = eval_logprob
-                best_model = True
-                best_eval_iter = cur_iter
-            else:
-                best_model = False
-
-        else:
+        if not eval_sequences:
             if np.isinf(best_log_prob):
                 best_log_prob = total_logprobs
                 best_model = True
@@ -343,13 +337,86 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
             else:
                 best_model = False
 
+        if early_stopper:
+            if not eval_sequences:
+                continue_bool = early_stopper.update(total_logprobs)
+        last_model = not continue_bool
+
         logging.info("The log prob for this iter is {}".format(total_logprobs))
         pcfg_replace_model(hid_seqs, ev_seqs, bounded_pcfg_model, pcfg_model, dnn=dnn_obs_model,
-                           productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model)
-        #if eval_sequences:
-        #    if cur_iter % eval_interval == 0 and cur_iter !=0:
-        #        eval_pass(evalDistributer, eval_start_ind, eval_end_ind)
+                           productions=(productions, p0_counter), best_logprob=best_log_prob, best_model=best_model,
+                           last_model=last_model)
 
+        if eval_sequences:
+            if cur_iter % eval_interval == 0 and cur_iter != 0:
+                tic = time.process_time()
+                if dev_sequences:
+                    eval_logprob, dev_save_logprobs = eval_pass(workDistributer, dev_start_ind, dev_end_ind,
+                                                            dev=True)
+                    test_logprob, test_save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                                            dev=False)
+                    iter_logprobs.append((eval_logprob,test_logprob))
+                else:
+                    eval_logprob, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                                            dev=False)
+                    iter_logprobs.append((eval_logprob,))
+                toc = time.process_time()
+                logging.info(toc - tic)
+                #tic = time.process_time()
+                #eval_logprob = eval_pass_alt_new(working_dir, eval_sequences, bounded_pcfg_model, cur_iter)
+                #toc = time.process_time()
+                #logging.info(toc - tic)
+                if early_stopper:
+                    continue_bool = early_stopper.update(eval_logprob)
+                    last_model = not continue_bool
+                    if last_model:
+                        if save_evals:
+                            if dev_sequences:
+                                #_, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                                #                                        dev=False)
+                                # if we use dev_eval, we need to concatenate the logprobs of the dev and test sets at the final iter
+                                save_logprobs = dev_save_logprobs + test_save_logprobs
+                            save_eval_probs(save_logprobs, working_dir)
+                        pcfg_model.save(dnn=dnn_obs_model, last_model=last_model)
+                if dev_sequences:
+                    if best_test_prob < test_logprob:
+                        best_test_prob = test_logprob
+                        # we save the dev logprobs at the best test set logprobs
+                        # and we save the test logpbrobs at the best dev set logprobs
+                        best_test_save_probs = dev_save_logprobs
+                if best_eval_prob < eval_logprob:
+                    logging.info(f"eval logprobs have improved by {eval_logprob - best_eval_prob}")
+                    best_eval_prob = eval_logprob
+                    best_log_prob = best_eval_prob
+                    pcfg_model.save(dnn=dnn_obs_model, best_model=True, last_model=last_model,
+                                    best_logprob=best_log_prob)
+                    if save_evals:
+                        if dev_sequences:
+                            # if we use dev sequences, then we need to make sure we calculate the
+                            # logprobs of the testing set instead
+                            #_, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+                            #                                       dev=False)
+                            # the best_test_save_probs are the probabilities of the dev set at the iter with the best
+                            # test set probs
+                            save_logprobs = best_test_save_probs + test_save_logprobs
+                            logging.info(f" saving test logprobs {np.sum(save_logprobs)}")
+                        save_eval_probs(save_logprobs, working_dir, best_probs=True)
+                    #best_model = True
+                    best_eval_iter = cur_iter
+
+            else:
+                best_model = False
+
+        if eval_sequences:
+            best_log_prob = best_eval_prob
+
+        iter_toc = time.time()
+        logging.info(f"Parsing is done! Finished iter {cur_iter} in {iter_toc - iter_tic} seconds")
+        total_runtime += (iter_toc - iter_tic)
+        if not continue_bool:
+            logging.warning(f"Early stopper has shutdown training at iter {cur_iter} as logodds have not been"
+                            f" improving within tolerance."
+                            f" Consider setting early_stopping to false in config if this is undesired behavior")
 
         ## Update sentence indices for next batch:
         if batch_per_update < num_sents:
@@ -367,30 +434,66 @@ def sample_beam(ev_seqs, params, working_dir, gold_seqs=None,
         #         pickle.dump(dnn_obs_model, rfn)
         #
         cur_iter += 1
-        if params.get("print_trees", False):
-            p.join()
+    if save_evals and save_logprobs:
+        if dev_sequences:
+            # if we use dev sequences, then we need to make sure we calculate the
+            # logprobs of the testing set instead
+            #_, save_logprobs = eval_pass(workDistributer, eval_start_ind, eval_end_ind,
+             #                            dev=False)
+            save_logprobs = dev_save_logprobs + test_save_logprobs
 
+        save_eval_probs(save_logprobs, working_dir, best_probs=False)
     logging.debug("Ending sampling")
     workDistributer.stop()
 
-    for cur_proc in range(0, num_cpu_workers+num_gpu_workers):
+    for cur_proc in range(0, num_cpu_workers + num_gpu_workers):
         logging.info("Sending terminate signal to worker {} ...".format(cur_proc))
         inf_procs[cur_proc].terminate()
-        if eval_sequences:
-            eval_inf_procs[cur_proc].terminate()
 
-    for cur_proc in range(0, num_cpu_workers+num_gpu_workers):
+    for cur_proc in range(0, num_cpu_workers + num_gpu_workers):
         logging.info("Waiting to join worker {} ...".format(cur_proc))
         inf_procs[cur_proc].join()
         inf_procs[cur_proc] = None
-        if eval_sequences:
-            eval_inf_procs[cur_proc].join()
-            eval_inf_procs[cur_proc] = None
 
     logging.info("Sampling complete.")
-    logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
+
+    if params.get("print_trees", False):
+        linetrees_fn = 'iter_' + str(cur_iter) + '.linetrees'
+        full_fn = os.path.join(working_dir, linetrees_fn)
+        if print_out_first_n_sents != -1:
+            trees = hid_seqs[: print_out_first_n_sents]
+        else:
+            trees = hid_seqs
+        #print(hid_seqs)
+        if cur_iter % 100 == 0 and cur_iter != 0:
+            pprint_bool = True
+        elif cur_iter == iters:
+            logging.info("printing pretty trees")
+            pprint_bool = True
+        else:
+            pprint_bool = False
+        p = multiprocessing.Process(target=write_linetrees_file, args=(trees,
+                                                                       pcfg_model.word_dict,
+                                                                       full_fn, pprint_bool))
+        p.daemon = True
+        p.start()
+        print("printing linetrees")
+        p.join()
+
+
+    with open(working_dir + f"_monitoring_probs.pkl", 'wb+') as handle:
+        pickle.dump(np.array(iter_logprobs, dtype=np.float32), handle, protocol=pickle.HIGHEST_PROTOCOL)
+    del iter_logprobs
+    logging.info(f"Total runtime for this training pass was: {round((total_runtime/60),1)} Minutes")
     if eval_sequences:
-        logging.info(f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
+        if best_eval_iter > cur_iter - (eval_interval * 2):
+            logging.warning(
+                f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
+        else:
+            logging.info(
+                f"Best eval logprobability found at iter {best_eval_iter} with logprobability {best_eval_prob}.")
+    else:
+        logging.info(f"Best logprobability found at iter {best_iter} with logprobability {best_log_prob}.")
     # return samples
 
 
@@ -407,36 +510,172 @@ def handle_sigint(signum, frame, workers, work_server):
     raise SystemExit
 
 
-def eval_pass(evalDistributer:WorkDistributerServer, start_ind, end_ind):
-    logging.info("initiating eval parse")
+def eval_pass(evalDistributer: WorkDistributerServer, start_ind, end_ind, dev=False):
+    if dev:
+        logging.info("initiating dev parse")
+    else:
+        logging.info("initiating eval parse")
     eval_logprob = 0
     eval_log_e = 0
-    evalDistributer.submitSentenceJobs(start_ind, end_ind)
+    evalDistributer.submitSentenceJobs_eval(start_ind, end_ind, dev=dev)
     parses = evalDistributer.get_parses()
+    logprobs = []
+    assert len(parses) == end_ind - start_ind
     for parse in parses:
         if parse.success:
             eval_logprob += parse.log_prob
             eval_log_e += parse.log_prob / np.log10(np.e)
+            logprobs.append(parse.log_prob / np.log10(np.e))
+        else:
+            logging.error(f"Eval parser encountered an unparseable sequence")
+    if dev:
+        eval_ = 'dev'
+    else:
+        eval_ = 'test'
+    logging.info(f"total {eval_} logprob = {eval_logprob}")
+    logging.info(f"total {eval_} logprob = {eval_log_e}")
+    return eval_logprob, logprobs
+
+
+def save_eval_probs(probs, working_dir, best_probs=False):
+    if best_probs:
+        with open(working_dir + "_eval_probs_best.pkl", 'wb+') as handle:
+            pickle.dump(np.array(probs, dtype=np.float64), handle, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        with open(working_dir + "_eval_probs.pkl", 'wb+') as handle:
+            pickle.dump(np.array(probs, dtype=np.float64), handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+class EarlyStopper:
+    '''
+    This counter sends a boolean depending on whether the logodds have gone up or down over the last iterations. It has
+     a tolerance counter for both the immediate slope (have the logodds gone up since the last check)
+     and a tolerance for the overall best result (have the logodds surpassed the best result)
+    '''
+
+    def __init__(self, tolerance=5, best_tolerance=10, delta=1.0):
+        self.best_probs = -np.inf
+        self.tolerance = tolerance
+        self.counter = 0
+        self.best_counter = 0
+        self.last_probs = -np.inf
+        self.best_tolerance = best_tolerance
+        self.delta = delta
+
+    def update(self, logodds):
+        if logodds > self.last_probs:
+            self.last_probs = logodds
+            self.counter = 0
+            if logodds > self.best_probs:
+                self.best_probs = logodds
+                self.best_counter = 0
+                return True
+            elif logodds > (self.best_probs - self.delta):
+                self.best_counter = 0
+                return True
+            else:
+                self.best_counter += 1
+                if self.best_counter > self.best_tolerance:
+                    logging.warning(f"Stopping training last best logodds were {self.best_tolerance} evals ago")
+                    return False
+        elif logodds > (self.last_probs - self.delta):
+            self.last_probs = logodds
+            return True
+        else:
+            self.counter += 1
+            self.last_probs = logodds
+            self.best_counter += 1
+            if self.counter > self.tolerance:
+                logging.warning(f"Stopping training last loggodds improvement was {self.tolerance} evals ago")
+                return False
+            elif self.best_counter > self.best_tolerance:
+                logging.warning(f"Stopping training last best logodds were {self.best_tolerance} evals ago")
+                return False
+            else:
+                return True
+
+
+def eval_pass_alt(working_dir, eval_sequences, cur_iter):
+    model_dir = os.path.join(working_dir, f'pcfg_model_{cur_iter - 1}.pkl')
+    #in_file = open(model_dir, 'rb')
+    model, _ = torch.load(model_dir, weights_only=False)
+    #in_file.close()
+    # creating an unbounded model
+    unbounded_model = UnBounded_PCFG_Model(K)
+    unbounded_model.set_gammas(model.get_current_pcfg()[0])
+    unbounded_model.set_p0(model.p0)
+    unbounded_model.set_lexis(model)
+    cky = CKY_sampler(K=K, D=-1, max_len=max(map(len, eval_sequences)), gpu=False)
+    logging.info("initiating alt eval parse")
+    eval_logprob = 0
+    eval_log_e = 0
+    cky.set_models(unbounded_model.sparse_grammar, unbounded_model.p0[0:K], unbounded_model.lexis)
+    for sentence in eval_sequences:
+        log_prob = cky.inside_sample_eval(
+            sentence)
+        eval_logprob += log_prob
+        eval_log_e += log_prob / np.log10(np.e)
+
     logging.info(f"total eval logprob = {eval_logprob}")
-    logging.info(f"total eval logprob = {eval_logprob / np.log10(np.e)}")
     logging.info(f"total eval logprob = {eval_log_e}")
     return eval_logprob
 
 
-class EarlyStopper:
-    def __init__(self, tolerance=2):
-        self.best_probs = -np.inf
-        self.tolerance = tolerance
-        self.counter =0
+def eval_pass_alt_new(working_dir, eval_sequences, bounded_model, cur_iter):
+    model_dir = os.path.join(working_dir, f'pcfg_model_{cur_iter}.pkl')
+    #in_file = open(model_dir, 'rb')
+    model, _ = torch.load(model_dir, weights_only=False)
+    #in_file.close()
+    cky = CKY_sampler(K=K, D=D, max_len=max(map(len, eval_sequences)), gpu=False)
+    logging.info("initiating alt eval parse")
+    eval_logprob = 0
+    eval_log_e = 0
+    cky.set_models(bounded_model.sparse_grammar, bounded_model.p0, bounded_model.lexis)
+    for sentence in eval_sequences:
+        log_prob = cky.inside_sample_eval(
+            sentence)
+        eval_logprob += log_prob
+        eval_log_e += log_prob / np.log10(np.e)
 
-    def update(self, logodds):
-        if logodds > self.best_probs:
-            self.best_probs = logodds
-            self.counter = 0
-            return True
-        else:
-            self.counter +=1
-            if self.counter > self.tolerance:
-                return False
-            else:
-                return True
+    logging.info(f"total eval logprob = {eval_logprob}")
+    logging.info(f"total eval logprob = {eval_log_e}")
+    return eval_logprob
+
+
+def eval_pass_alt_parallel(working_dir, eval_sequences, cur_iter):
+    model_dir = os.path.join(working_dir, f'pcfg_model_{cur_iter - 1}.pkl')
+
+    model, _ = torch.load(model_dir, weights_only=False)
+
+    # creating an unbounded model
+    unbounded_model = UnBounded_PCFG_Model(K)
+    unbounded_model.set_gammas(model.get_current_pcfg()[0])
+    unbounded_model.set_p0(model.p0)
+    unbounded_model.set_lexis(model)
+    logging.info("initiating alt eval parse")
+    eval_logprob = 0
+    eval_log_e = 0
+
+    pool = multiprocessing.Pool(5)
+    sequence_generator = Sequence_Gen(eval_sequences, unbounded_model)
+    probs_map = [pool.map(cky_parallel_process, sequence_generator)]
+    eval_logprob = np.sum(np.array(probs_map))
+
+    eval_log_e += eval_logprob / np.log10(np.e)
+
+    logging.info(f"total eval logprob = {eval_logprob}")
+    logging.info(f"total eval logprob = {eval_log_e}")
+    return eval_logprob
+
+
+def cky_parallel_process(sequence_unbounded):
+    sequence, unbounded_model = sequence_unbounded
+    cky = CKY_sampler(K=unbounded_model.K, D=-1, max_len=len(sequence), gpu=False)
+    cky.set_models(unbounded_model.sparse_grammar, unbounded_model.p0, unbounded_model.lexis)
+    return cky.inside_sample_eval(sequence)
+
+
+def Sequence_Gen(sequence, unbounded_model):
+    "little convenience function to deal with multiprocessing map"
+    for i in sequence:
+        yield (i, unbounded_model)

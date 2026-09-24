@@ -120,5 +120,4 @@ if __name__ == "__main__":
         multiprocessing.set_start_method("fork")
     except:
         ctx = multiprocessing.get_start_method()
-        print(ctx)
     main(sys.argv[1:])

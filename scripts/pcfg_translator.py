@@ -1,4 +1,5 @@
-import nltk
+import nltk.grammar
+import nltk.tree
 import numpy as np
 import os
 from copy import deepcopy
@@ -139,7 +140,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
                        strategy=None, ints_seqs=None, gold_pos_dict = None,
                        ac_coeff = 1.0, sample_alpha_flag=False, resume = False,
                        dnn=None, random_trees=False, productions=None,
-                       best_logprob=0, best_model=False):
+                       best_logprob=0, best_model=False, last_model=False):
     # import pdb; pdb.set_trace()
     D = bounded_model.D
     d = D + 1  # calculate d+1 depth models for all pseudo count models, but not using them in
@@ -152,6 +153,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
             pcfg_counts = {}
             p0_counts = {}
             if random_trees:
+                logging.info('Initializing random trees.')
                 hid_seqs = generate_random_trees(ev_seqs, K)
                 _, pcfg_counts, p0_counts = extract_counts_from_trees(hid_seqs, K)
             logging.info('PCFG translator NULL initialization.')
@@ -161,7 +163,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
                              'extraction.')
                 _, pcfg_counts, p0_counts = extract_counts_from_trees(hid_seqs, K)
             else:
-                logging.info('Productions already calculated.')
+                logging.info(f'Productions already calculated.')
                 pcfg_counts, p0_counts = productions
                 total_count = 0
                 for parent in pcfg_counts:
@@ -183,7 +185,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
     sampled_pcfg, p0 = pcfg_model.sample(pcfg_counts, p0_counts, annealing_coeff=ac_coeff,
                                          sample_alpha_flag=sample_alpha_flag,
                                          resume=resume, dnn=dnn,
-                                         best_logprob=best_logprob, best_model=best_model)
+                                         best_logprob=best_logprob, best_model=best_model, last_model=last_model)
     # At this point, we have successfully sampled an unbounded grammar model
 
     if d > 0:
@@ -208,6 +210,7 @@ def pcfg_replace_model(hid_seqs, ev_seqs, bounded_model, pcfg_model, J=25, gold_
     # exit()
 
 def generate_random_trees(ev_seqs, K):
+    print('random trees')
     trees = []
     for sent in ev_seqs:
         sent_len = len(sent)
